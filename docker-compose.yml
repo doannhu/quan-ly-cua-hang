@@ -1,0 +1,36 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      PORT: 4000
+      DB_DRIVER: mongo
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: store_app
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      AI_API_KEY: ${AI_API_KEY:-}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  mongo_data:
+  uploads:
