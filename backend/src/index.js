@@ -37,4 +37,6 @@ app.use((err, _req, res, _next) => {
   res.status(err.status || 500).json({ error: err.message || 'Lỗi máy chủ' });
 });
 
-app.listen(config.port, () => console.log(`API listening on :${config.port}`));
+app.listen(config.port, config.host, () =>
+  console.log(`API listening on ${config.host}:${config.port} (db: ${config.dbDriver})`),
+);

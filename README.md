@@ -1,6 +1,9 @@
 # Quản lý cửa hàng – Store inventory app
 
-React (Vite) + Express + MongoDB, chạy bằng Docker. Giao diện mobile-first kiểu iOS.
+React (Vite) + Express + **SQLite** (mặc định) hoặc MongoDB. Giao diện mobile-first kiểu iOS.
+
+- Chạy bằng Docker (MongoDB): xem mục **Chạy** bên dưới.
+- Chạy trên VPS **không dùng Docker** (SQLite, systemd, nginx): xem [DEPLOY.md](DEPLOY.md).
 
 ## Chạy
 
@@ -21,7 +24,7 @@ Mở http://localhost:8080 (đổi cổng bằng `WEB_PORT`).
 frontend (nginx, React SPA) ──/api, /uploads──▶ backend (Express) ──▶ MongoDB
 ```
 
-- `backend/src/db/` – lớp repository (`insert/get/find/update/remove`). Chọn driver bằng `DB_DRIVER`; để dùng database khác chỉ cần thêm một driver trả về cùng 4 repo (`users`, `stores`, `counters`, `reports`) trong `db/index.js`.
+- `backend/src/db/` – lớp repository (`insert/get/find/update/remove`). Chọn driver bằng `DB_DRIVER`: `sqlite` (mặc định, file `SQLITE_PATH`, dùng `node:sqlite` có sẵn trong Node ≥ 22.13) hoặc `mongo` (`MONGO_URI`). Thêm database khác = thêm một driver trả về cùng 4 repo (`users`, `stores`, `counters`, `reports`) trong `db/index.js`. Chuyển dữ liệu Mongo → SQLite: `backend/scripts/migrate-mongo-to-sqlite.js`.
 - `backend/src/routes/` – mỗi nhóm chức năng một router; thêm báo cáo/quản lý mới = thêm một file route.
 - Ảnh lưu ở volume `uploads` (nén về ≤1600px ở trình duyệt trước khi tải lên).
 - Ngày/giờ báo cáo do server ghi theo `TZ` (mặc định `Asia/Ho_Chi_Minh`).
@@ -43,6 +46,7 @@ Có thể bọc các endpoint này thành MCP server khi cần.
 ## Dev không dùng Docker
 
 ```bash
-cd backend  && npm i && ADMIN_PASSWORD=x JWT_SECRET=y npm run dev   # cần MongoDB ở localhost:27017
-cd frontend && npm i && npm run dev                                # proxy /api → localhost:4000
+cd backend  && npm i && cp .env.example .env   # sửa SQLITE_PATH/UPLOAD_DIR thành ./data/store.db, ./data/uploads khi chạy local
+npm run dev                                     # SQLite, không cần cài database
+cd frontend && npm i && npm run dev             # proxy /api → localhost:4000
 ```

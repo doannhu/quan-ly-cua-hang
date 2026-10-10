@@ -1,0 +1,25 @@
+# systemd unit for the backend API.
+# Install: cp deploy/quan-ly-cua-hang.service /etc/systemd/system/ && systemctl enable --now quan-ly-cua-hang
+[Unit]
+Description=Quan ly cua hang - backend API
+After=network.target
+
+[Service]
+Type=simple
+User=quanly
+WorkingDirectory=/opt/quan-ly-cua-hang/backend
+EnvironmentFile=/opt/quan-ly-cua-hang/backend/.env
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--disable-warning=ExperimentalWarning
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+# Hardening: the service can only write to its data directory
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/quan-ly-cua-hang
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

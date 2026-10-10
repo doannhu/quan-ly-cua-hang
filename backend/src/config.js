@@ -6,7 +6,9 @@ const required = (name) => {
 
 export const config = {
   port: Number(process.env.PORT || 4000),
-  dbDriver: process.env.DB_DRIVER || 'mongo',
+  host: process.env.HOST || '0.0.0.0',
+  dbDriver: process.env.DB_DRIVER || 'sqlite',
+  sqlitePath: process.env.SQLITE_PATH || './data/store.db',
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017',
   mongoDb: process.env.MONGO_DB || 'store_app',
   adminPassword: required('ADMIN_PASSWORD'),
