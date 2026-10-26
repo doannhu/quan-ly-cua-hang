@@ -18,6 +18,7 @@ export async function loadCatalog({ stores, counters }) {
       .map((big) => ({
         id: big.id,
         name: big.name,
+        createdAt: big.createdAt, // lets the UI keep each counter's colour stable
         smallCounters: c.filter((x) => x.parentId === big.id).map((x) => ({ id: x.id, name: x.name })),
       })),
   }));
@@ -61,11 +62,18 @@ export default function catalogRoutes(repos) {
       await counters.insert({ storeId: req.params.id, parentId: b.data.parentId || null, name: b.data.name }),
     );
   });
+  // Rename a counter and/or set which PMV quầy nhỏ it corresponds to (pmvName; null = unlink).
   r.patch('/admin/counters/:id', adm, async (req, res) => {
-    const b = name.safeParse(req.body);
-    if (!b.success) return res.status(400).json({ error: 'Tên quầy không hợp lệ' });
+    const b = z
+      .object({ name: z.string().trim().min(1).max(100).optional(), pmvName: z.string().trim().min(1).max(100).nullable().optional() })
+      .safeParse(req.body);
+    if (!b.success || (b.data.name === undefined && b.data.pmvName === undefined))
+      return res.status(400).json({ error: 'Dữ liệu quầy không hợp lệ' });
     if (!(await counters.get(req.params.id))) return res.status(404).json({ error: 'Không tìm thấy quầy' });
-    res.json(await counters.update(req.params.id, { name: b.data.name }));
+    const patch = {};
+    if (b.data.name !== undefined) patch.name = b.data.name;
+    if (b.data.pmvName !== undefined) patch.pmvName = b.data.pmvName;
+    res.json(await counters.update(req.params.id, patch));
   });
   r.delete('/admin/counters/:id', adm, async (req, res) => {
     await counters.removeMany({ parentId: req.params.id });

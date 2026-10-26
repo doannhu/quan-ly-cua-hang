@@ -1,20 +1,45 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, compressImage } from '../api.js';
 import { CameraIcon, CheckIcon } from '../components/icons.jsx';
-import { Picker, Row, Segmented, fmt, useDialog } from '../components/ui.jsx';
+import { Picker, Row, SHIFTS, Segmented, fmt, shiftLabel, useDialog } from '../components/ui.jsx';
 
 let seq = 0;
-const newTray = (no) => ({ key: ++seq, no: String(no), qty: '', photos: [] });
+const newPosition = (no) => ({ key: ++seq, no: String(no), note: '', qty: '', photos: [] });
+const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', positions: [newPosition(1)] });
 const defaultShift = () => (new Date().getHours() < 14 ? 1 : 2);
+const HANDOVER = 3; // "Giao ca 1-2"
+const qtyOf = (p) => parseInt(p.qty, 10) || 0;
+const sectionTotal = (s) => s.positions.reduce((sum, p) => sum + qtyOf(p), 0);
+// Suggestions for the optional position note; staff can type anything.
+const NOTE_SUGGESTIONS = ['Hộc', 'Kệ', 'Tủ', 'Khay', 'Ngăn', 'Móc', 'Tủ kính'];
 
-export default function StaffReport({ user, onBack }) {
+// Turn a saved submission (its per-counter reports) back into form state. Saved photos keep their URL.
+const sectionsFrom = (editing) =>
+  editing.reports.map((r) => ({
+    key: ++seq,
+    bigId: r.bigCounterId,
+    smallId: r.smallCounterId,
+    note: r.note || '',
+    positions: r.positions.map((p) => ({
+      key: ++seq,
+      no: String(p.no),
+      note: p.note || '',
+      qty: String(p.quantity),
+      photos: (p.photos || []).map((url) => ({ id: ++seq, url, preview: url })),
+    })),
+  }));
+
+// `editing` (optional): a submission from "Báo cáo đã nộp hôm nay" to edit and resubmit.
+export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   const [dialog, ask] = useDialog();
   const [catalog, setCatalog] = useState(null);
-  const [storeId, setStoreId] = useState(() => localStorage.getItem('lastStore') || '');
-  const [shift, setShift] = useState(defaultShift);
-  const [bigId, setBigId] = useState('');
-  const [smallId, setSmallId] = useState('');
-  const [trays, setTrays] = useState(() => [newTray(1)]);
+  const [storeId, setStoreId] = useState(() => editing?.storeId || localStorage.getItem('lastStore') || '');
+  const [shift, setShift] = useState(() => editing?.shift || defaultShift());
+  const [sections, setSections] = useState(() => (editing ? sectionsFrom(editing) : [newSection()]));
+  // "Giao ca 1-2" is counted by two people: pick the other staff member.
+  const [partnerId, setPartnerId] = useState(() => editing?.partnerId || '');
+  const [staff, setStaff] = useState([]);
+  const isHandover = shift === HANDOVER;
   const [now, setNow] = useState(new Date());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
@@ -23,46 +48,63 @@ export default function StaffReport({ user, onBack }) {
 
   useEffect(() => {
     api.get('/stores').then(setCatalog).catch((e) => ask(info('Lỗi', e.message)));
+    api.get('/staff').then((list) => setStaff(list.filter((u) => u.id !== user.id))).catch(() => {});
     const t = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(t);
   }, []);
 
   const store = catalog?.find((s) => s.id === storeId);
-  const big = store?.bigCounters.find((b) => b.id === bigId);
-  const total = useMemo(() => trays.reduce((s, t) => s + (parseInt(t.qty, 10) || 0), 0), [trays]);
+  const bigOf = (s) => store?.bigCounters.find((b) => b.id === s.bigId);
+  const smallOf = (s) => bigOf(s)?.smallCounters.find((c) => c.id === s.smallId);
+  const total = sections.reduce((sum, s) => sum + sectionTotal(s), 0);
 
   const pickStore = (id) => {
     setStoreId(id);
     localStorage.setItem('lastStore', id);
-    setBigId('');
-    setSmallId('');
+    setSections([newSection()]);
   };
-  const patchTray = (key, patch) => setTrays((ts) => ts.map((t) => (t.key === key ? { ...t, ...patch } : t)));
-  const addTray = () =>
-    setTrays((ts) => {
-      const nums = ts.map((t) => parseInt(t.no, 10)).filter((n) => !isNaN(n));
-      return [...ts, newTray((nums.length ? Math.max(...nums) : ts.length) + 1)];
+
+  // --- state helpers ---
+  const patchSection = (sk, fn) => setSections((ss) => ss.map((s) => (s.key === sk ? fn(s) : s)));
+  const patchPosition = (sk, pk, patch) =>
+    patchSection(sk, (s) => ({ ...s, positions: s.positions.map((p) => (p.key === pk ? { ...p, ...patch } : p)) }));
+  const addPosition = (sk) =>
+    patchSection(sk, (s) => {
+      const nums = s.positions.map((p) => parseInt(p.no, 10)).filter((n) => !isNaN(n));
+      return { ...s, positions: [...s.positions, newPosition((nums.length ? Math.max(...nums) : s.positions.length) + 1)] };
     });
+  const removePosition = (sk, pk) => patchSection(sk, (s) => ({ ...s, positions: s.positions.filter((p) => p.key !== pk) }));
+  const removeSection = (sk) => setSections((ss) => ss.filter((s) => s.key !== sk));
 
-  const addPhotos = async (files) => {
-    const key = fileFor.current;
+  const addPhotos = (files) => {
+    const { sk, pk } = fileFor.current;
     const added = [...files].map((file) => ({ id: ++seq, file, preview: URL.createObjectURL(file) }));
-    setTrays((ts) => ts.map((t) => (t.key === key ? { ...t, photos: [...t.photos, ...added] } : t)));
+    patchSection(sk, (s) => ({
+      ...s,
+      positions: s.positions.map((p) => (p.key === pk ? { ...p, photos: [...p.photos, ...added] } : p)),
+    }));
   };
-  const removePhoto = (key, id) =>
-    setTrays((ts) => ts.map((t) => (t.key === key ? { ...t, photos: t.photos.filter((p) => p.id !== id) } : t)));
+  const removePhoto = (sk, pk, id) =>
+    patchSection(sk, (s) => ({
+      ...s,
+      positions: s.positions.map((p) => (p.key === pk ? { ...p, photos: p.photos.filter((x) => x.id !== id) } : p)),
+    }));
 
-  const problem = !storeId
-    ? 'Vui lòng chọn cửa hàng'
-    : !bigId
-      ? 'Vui lòng chọn quầy lớn'
-      : !smallId
-        ? 'Vui lòng chọn quầy nhỏ'
-        : trays.some((t) => !t.no.trim())
-          ? 'Vui lòng nhập số khay'
-          : trays.some((t) => t.qty === '' || !/^\d+$/.test(t.qty))
-            ? 'Vui lòng nhập số lượng hàng cho mỗi khay'
-            : '';
+  // --- validation ---
+  const problem = (() => {
+    if (isHandover && !partnerId) return 'Giao ca 1-2: vui lòng chọn nhân viên đếm hàng cùng';
+    if (!storeId) return 'Vui lòng chọn cửa hàng';
+    for (const [i, s] of sections.entries()) {
+      const label = `Quầy ${i + 1}`;
+      if (!s.bigId) return `${label}: vui lòng chọn quầy lớn`;
+      if (!s.smallId) return `${label}: vui lòng chọn quầy nhỏ`;
+      if (s.positions.some((p) => !p.no.trim())) return `${label}: vui lòng nhập số vị trí`;
+      if (s.positions.some((p) => !/^\d+$/.test(p.qty))) return `${label}: vui lòng nhập số lượng hàng cho mỗi vị trí`;
+    }
+    const ids = sections.map((s) => s.smallId);
+    if (new Set(ids).size !== ids.length) return 'Mỗi quầy nhỏ chỉ được chọn một lần';
+    return '';
+  })();
 
   const submit = async () => {
     setBusy(true);
@@ -70,21 +112,31 @@ export default function StaffReport({ user, onBack }) {
       const body = {
         storeId,
         shift,
-        bigCounterId: bigId,
-        smallCounterId: smallId,
-        trays: await Promise.all(
-          trays.map(async (t) => ({
-            no: t.no.trim(),
-            quantity: parseInt(t.qty, 10),
-            photos: await Promise.all(
-              t.photos.map(async (p) => (await api.upload(await compressImage(p.file))).url),
+        partnerId: isHandover ? partnerId : null,
+        sections: await Promise.all(
+          sections.map(async (s) => ({
+            bigCounterId: s.bigId,
+            smallCounterId: s.smallId,
+            note: s.note.trim(),
+            positions: await Promise.all(
+              s.positions.map(async (p) => ({
+                no: p.no.trim(),
+                note: p.note.trim(),
+                quantity: parseInt(p.qty, 10),
+                // keep already-saved photos, upload new ones
+                photos: await Promise.all(
+                  p.photos.map(async (x) => x.url || (await api.upload(await compressImage(x.file))).url),
+                ),
+              })),
             ),
           })),
         ),
       };
-      const report = await api.post('/reports', body);
-      trays.forEach((t) => t.photos.forEach((p) => URL.revokeObjectURL(p.preview)));
-      setDone(report);
+      const result = editing
+        ? await api.put(`/reports/submissions/${editing.submissionId}`, body)
+        : await api.post('/reports', body);
+      sections.forEach((s) => s.positions.forEach((p) => p.photos.forEach((x) => x.file && URL.revokeObjectURL(x.preview))));
+      setDone(result);
     } catch (e) {
       ask(info('Không thể nộp', e.message));
     } finally {
@@ -94,31 +146,51 @@ export default function StaffReport({ user, onBack }) {
 
   const confirm = () => {
     if (problem) return ask(info('Chưa đủ thông tin', problem));
+    const lines = sections.map((s) => `• ${bigOf(s).name} › ${smallOf(s).name}: ${fmt(sectionTotal(s))}`).join('\n');
     ask({
-      title: 'Nộp thông tin?',
-      message: `${store.name} · ${big.name} › ${big.smallCounters.find((s) => s.id === smallId).name}\nCa ${shift} · Tổng ${fmt(total)} hàng. Bạn chắc chắn muốn nộp?`,
-      actions: [{ label: 'Hủy' }, { label: 'Nộp', style: 'bold', onClick: submit }],
+      title: editing ? 'Nộp lại báo cáo?' : 'Nộp thông tin?',
+      message: `${store.name} · ${shiftLabel(shift)}${
+        isHandover ? `\nĐếm cùng: ${staff.find((u) => u.id === partnerId)?.name || ''}` : ''
+      }\n${lines}\nTổng ${fmt(total)} hàng. ${
+        editing ? 'Thông tin mới sẽ thay thế báo cáo đã nộp lúc ' + editing.time + '.' : 'Bạn chắc chắn muốn nộp?'
+      }`,
+      actions: [{ label: 'Hủy' }, { label: editing ? 'Nộp lại' : 'Nộp', style: 'bold', onClick: submit }],
     });
   };
 
   const reset = () => {
     setDone(null);
-    setTrays([newTray(1)]);
-    setSmallId('');
+    setSections([newSection()]);
   };
 
   if (done) {
     return (
       <main className="page center-screen">
         <div className="check"><CheckIcon size={44} /></div>
-        <h1 className="center">Đã nộp thành công</h1>
+        <h1 className="center">{editing ? 'Đã cập nhật báo cáo' : 'Đã nộp thành công'}</h1>
         <p className="muted center">
-          {done.storeName} · {done.bigCounterName} › {done.smallCounterName}
-          <br />
-          Ca {done.shift} · {done.time} · Tổng <b>{fmt(done.total)}</b> hàng
+          {done.storeName} · {shiftLabel(done.shift)} · {done.time}
+          {done.editCount > 0 && ` · đã sửa ${done.editCount} lần`}
+          {done.partnerName && <><br />Đếm cùng: {done.partnerName}</>}
         </p>
-        <button className="btn primary block" onClick={reset}>Nhập báo cáo mới</button>
-        <button className="btn link block" onClick={onBack}>Về trang chủ</button>
+        <div className="group">
+          {done.reports.map((r) => (
+            <div key={r.id} className="row">
+              <span className="row-label">{r.bigCounterName} › {r.smallCounterName}</span>
+              <b>{fmt(r.total)}</b>
+            </div>
+          ))}
+          <div className="row"><b>Tổng</b><b>{fmt(done.total)}</b></div>
+        </div>
+        {editing ? (
+          <button className="btn primary block" onClick={onBack}>Xem báo cáo đã nộp</button>
+        ) : (
+          <>
+            <button className="btn primary block" onClick={reset}>Nhập báo cáo mới</button>
+            <button className="btn link block" onClick={onOpenMine}>Xem báo cáo đã nộp hôm nay</button>
+            <button className="btn link block" onClick={onBack}>Về trang chủ</button>
+          </>
+        )}
       </main>
     );
   }
@@ -128,91 +200,125 @@ export default function StaffReport({ user, onBack }) {
       <header className="nav">
         <button className="btn link back" onClick={onBack}>
           <svg width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 1L1 9l8 8" /></svg>
-          Trang chủ
+          {editing ? 'Báo cáo đã nộp' : 'Trang chủ'}
         </button>
       </header>
 
-      <h1 className="page-title">Báo cáo hàng thực tế</h1>
+      <h1 className="page-title">{editing ? 'Sửa báo cáo' : 'Báo cáo hàng thực tế'}</h1>
+      {editing && (
+        <p className="muted edit-hint">
+          Đã nộp lúc {editing.time}{editing.editCount > 0 ? ` · đã sửa ${editing.editCount} lần` : ''}. Sửa xong bấm “Nộp lại”.
+        </p>
+      )}
       <div className="group">
         <Row label="Nhân viên"><span>{user.name}</span></Row>
         <Row label="Ngày"><span>{now.toLocaleDateString('vi-VN')}</span></Row>
         <Row label="Thời gian"><span>{now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span></Row>
-        <Row label="Ca làm">
-          <Segmented options={[{ value: 1, label: 'Ca 1' }, { value: 2, label: 'Ca 2' }]} value={shift} onChange={setShift} />
-        </Row>
+        <div className="row shift-row">
+          <span className="row-label">Ca làm</span>
+          <Segmented options={SHIFTS} value={shift} onChange={setShift} />
+        </div>
+        {isHandover && (
+          <Picker label="Đếm cùng" value={partnerId} onChange={setPartnerId} placeholder="Chọn nhân viên…"
+            options={staff.map((u) => ({ value: u.id, label: u.name }))} />
+        )}
       </div>
 
       <div className="group">
         <Picker label="Cửa hàng" value={storeId} onChange={pickStore} placeholder={catalog ? 'Chọn…' : 'Đang tải…'}
           options={(catalog || []).map((s) => ({ value: s.id, label: s.name }))} />
-        <Picker label="Quầy lớn" value={bigId} disabled={!store} onChange={(v) => { setBigId(v); setSmallId(''); }}
-          options={(store?.bigCounters || []).map((x) => ({ value: x.id, label: x.name }))} />
-        <Picker label="Quầy nhỏ" value={smallId} disabled={!big} onChange={setSmallId}
-          options={(big?.smallCounters || []).map((x) => ({ value: x.id, label: x.name }))} />
       </div>
 
-      <h2 className="section">Khay hàng</h2>
-      <div className="group trays">
-        <div className="tray-head">
-          <span>Khay số</span><span>Số lượng</span><span>Hình chụp</span>
-        </div>
-        {trays.map((t) => (
-          <div className="tray" key={t.key}>
-            <input
-              className="tray-no"
-              inputMode="numeric"
-              aria-label="Khay số"
-              value={t.no}
-              onChange={(e) => patchTray(t.key, { no: e.target.value })}
-            />
-            <input
-              className="tray-qty"
-              inputMode="numeric"
-              placeholder="0"
-              aria-label="Số lượng"
-              value={t.qty}
-              onChange={(e) => patchTray(t.key, { qty: e.target.value.replace(/\D/g, '') })}
-            />
-            <div className="photos">
-              {t.photos.map((p) => (
-                <div className="thumb" key={p.id}>
-                  <img src={p.preview} alt="" />
-                  <button aria-label="Xóa ảnh" onClick={() => removePhoto(t.key, p.id)}>×</button>
+      {sections.map((s, i) => {
+        const big = bigOf(s);
+        const small = smallOf(s);
+        // A small counter already used in another section can't be picked again.
+        const taken = new Set(sections.filter((x) => x.key !== s.key).map((x) => x.smallId));
+        return (
+          <section key={s.key}>
+            <div className="counter-head">
+              <h2>Quầy {i + 1}{small ? ` · ${small.name}` : ''}</h2>
+              {sections.length > 1 && (
+                <button className="btn link small danger-text" onClick={() => removeSection(s.key)}>Xóa quầy</button>
+              )}
+            </div>
+            <div className="group">
+              <Picker label="Quầy lớn" value={s.bigId} disabled={!store}
+                onChange={(v) => patchSection(s.key, (x) => ({ ...x, bigId: v, smallId: '' }))}
+                options={(store?.bigCounters || []).map((x) => ({ value: x.id, label: x.name }))} />
+              <Picker label="Quầy nhỏ" value={s.smallId} disabled={!big}
+                onChange={(v) => patchSection(s.key, (x) => ({ ...x, smallId: v }))}
+                options={(big?.smallCounters || []).filter((x) => !taken.has(x.id)).map((x) => ({ value: x.id, label: x.name }))} />
+            </div>
+
+            <div className="group positions">
+              <div className="pos-head">
+                <span>Vị trí</span><span>Số lượng</span><span>Chú thích</span><span>Ảnh</span>
+              </div>
+              {s.positions.map((p) => (
+                <div className="pos" key={p.key}>
+                  <input className="pos-no" inputMode="numeric" aria-label="Vị trí số" value={p.no}
+                    onChange={(e) => patchPosition(s.key, p.key, { no: e.target.value })} />
+                  <input className="pos-qty" inputMode="numeric" placeholder="0" aria-label="Số lượng" value={p.qty}
+                    onChange={(e) => patchPosition(s.key, p.key, { qty: e.target.value.replace(/\D/g, '') })} />
+                  <input className="pos-note" list="position-notes" placeholder="Hộc, kệ…"
+                    aria-label="Chú thích vị trí (không bắt buộc)" maxLength={60} value={p.note}
+                    onChange={(e) => patchPosition(s.key, p.key, { note: e.target.value })} />
+                  <button className="cam" aria-label="Thêm ảnh"
+                    onClick={() => { fileFor.current = { sk: s.key, pk: p.key }; fileInput.current.click(); }}>
+                    <CameraIcon size={20} />
+                    {p.photos.length > 0 && <span className="cam-count">{p.photos.length}</span>}
+                  </button>
+                  {s.positions.length > 1 ? (
+                    <button className="pos-del" aria-label="Xóa vị trí" onClick={() => removePosition(s.key, p.key)}>×</button>
+                  ) : <span />}
+                  {p.photos.length > 0 && (
+                    <div className="photos">
+                      {p.photos.map((x) => (
+                        <div className="thumb" key={x.id}>
+                          <img src={x.preview} alt="" />
+                          <button aria-label="Xóa ảnh" onClick={() => removePhoto(s.key, p.key, x.id)}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
-              <button
-                className="cam"
-                aria-label="Thêm ảnh"
-                onClick={() => { fileFor.current = t.key; fileInput.current.click(); }}
-              >
-                <CameraIcon size={20} />
-              </button>
+              <button className="add-row" onClick={() => addPosition(s.key)}><span className="plus">+</span> Thêm vị trí</button>
+              <div className="row counter-total">
+                <span>Tổng {small ? small.name : `quầy ${i + 1}`}</span>
+                <strong>{fmt(sectionTotal(s))}</strong>
+              </div>
+              <div className="counter-note">
+                <textarea rows={2} maxLength={300} value={s.note}
+                  placeholder={`Chú thích cho ${small ? small.name : `quầy ${i + 1}`} (không bắt buộc)`}
+                  aria-label="Chú thích quầy nhỏ"
+                  onChange={(e) => patchSection(s.key, (x) => ({ ...x, note: e.target.value }))} />
+              </div>
             </div>
-            {trays.length > 1 && (
-              <button className="tray-del" aria-label="Xóa khay" onClick={() => setTrays((ts) => ts.filter((x) => x.key !== t.key))}>
-                −
-              </button>
-            )}
-          </div>
-        ))}
-        <button className="add-row" onClick={addTray}><span className="plus">+</span> Thêm khay</button>
+          </section>
+        );
+      })}
+
+      <div className="group spaced">
+        <button className="add-row" disabled={!store} onClick={() => setSections((ss) => [...ss, newSection()])}>
+          <span className="plus">+</span> Thêm quầy
+        </button>
       </div>
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }}
-      />
+
+      <datalist id="position-notes">
+        {NOTE_SUGGESTIONS.map((n) => <option key={n} value={n} />)}
+      </datalist>
+      <input ref={fileInput} type="file" accept="image/*" multiple hidden
+        onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
 
       <div className="total-bar">
         <div>
-          <span className="muted">Tổng số hàng</span>
+          <span className="muted">Tổng số hàng{sections.length > 1 ? ` · ${sections.length} quầy` : ''}</span>
           <strong>{fmt(total)}</strong>
         </div>
         <button className="btn primary" disabled={busy} onClick={confirm}>
-          {busy ? 'Đang nộp…' : 'Nộp thông tin'}
+          {busy ? 'Đang nộp…' : editing ? 'Nộp lại' : 'Nộp thông tin'}
         </button>
       </div>
       {dialog}

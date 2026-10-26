@@ -3,11 +3,14 @@ import { session, setUnauthorizedHandler } from './api.js';
 import Login from './pages/Login.jsx';
 import StaffHome from './pages/StaffHome.jsx';
 import StaffReport from './pages/StaffReport.jsx';
+import MyReports from './pages/MyReports.jsx';
 import Admin from './pages/Admin.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(() => session.get());
+  // home | report | mine | edit | admin
   const [view, setView] = useState('home');
+  const [editing, setEditing] = useState(null);
 
   const logout = () => {
     session.clear();
@@ -27,11 +30,22 @@ export default function App() {
     );
   }
   const isAdmin = auth.user.role === 'admin';
-  return view === 'admin' && isAdmin ? (
-    <Admin onBack={() => setView('home')} />
-  ) : view === 'report' ? (
-    <StaffReport user={auth.user} onBack={() => setView('home')} />
-  ) : (
-    <StaffHome user={auth.user} onOpenReport={() => setView('report')} onOpenAdmin={isAdmin ? () => setView('admin') : undefined} onLogout={logout} />
+  const home = () => setView('home');
+  const mine = () => setView('mine');
+
+  if (view === 'admin' && isAdmin) return <Admin onBack={home} />;
+  if (view === 'report') return <StaffReport user={auth.user} onBack={home} onOpenMine={mine} />;
+  if (view === 'mine')
+    return <MyReports onBack={home} onEdit={(s) => { setEditing(s); setView('edit'); }} />;
+  if (view === 'edit' && editing)
+    return <StaffReport key={editing.submissionId} user={auth.user} editing={editing} onBack={mine} />;
+  return (
+    <StaffHome
+      user={auth.user}
+      onOpenReport={() => setView('report')}
+      onOpenMine={mine}
+      onOpenAdmin={isAdmin ? () => setView('admin') : undefined}
+      onLogout={logout}
+    />
   );
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { ChartIcon, PencilIcon, StoreIcon, TrashIcon, UsersIcon } from '../components/icons.jsx';
-import { Picker, fmt, fmtDate, useDialog } from '../components/ui.jsx';
+import { CounterBadge, Picker, SHIFTS, Segmented, counterColors, fmt, fmtDate, shiftLabel, useDialog } from '../components/ui.jsx';
+import Comparison from './Comparison.jsx';
 
 const info = (title, message) => ({ title, message, actions: [{ label: 'OK', style: 'bold' }] });
 const today = (offset = 0) => {
@@ -11,6 +12,7 @@ const today = (offset = 0) => {
 
 export default function Admin({ onBack }) {
   const [tab, setTab] = useState('reports');
+  const [reportView, setReportView] = useState('list'); // list | compare
   const [dialog, ask] = useDialog();
   const fail = (e) => ask(info('Lỗi', e.message));
 
@@ -23,7 +25,15 @@ export default function Admin({ onBack }) {
         </button>
       </header>
       <h1 className="page-title">{{ reports: 'Báo cáo', staff: 'Nhân viên', catalog: 'Cửa hàng' }[tab]}</h1>
-      {tab === 'reports' && <Reports fail={fail} />}
+      {tab === 'reports' && (
+        <>
+          <div className="view-switch">
+            <Segmented options={[{ value: 'list', label: 'Báo cáo đếm' }, { value: 'compare', label: 'So sánh tồn' }]}
+              value={reportView} onChange={setReportView} />
+          </div>
+          {reportView === 'list' ? <Reports fail={fail} /> : <Comparison ask={ask} fail={fail} />}
+        </>
+      )}
       {tab === 'staff' && <Staff ask={ask} fail={fail} />}
       {tab === 'catalog' && <Catalog ask={ask} fail={fail} />}
       <nav className="tabbar">
@@ -57,7 +67,7 @@ function Reports({ fail }) {
   const days = useMemo(() => {
     const byDay = {};
     for (const r of list || []) {
-      const d = (byDay[r.date] ||= { date: r.date, total: 0, shifts: { 1: [], 2: [] } });
+      const d = (byDay[r.date] ||= { date: r.date, total: 0, shifts: { 1: [], 2: [], 3: [] } });
       d.total += r.total;
       d.shifts[r.shift].push(r);
     }
@@ -65,6 +75,42 @@ function Reports({ fail }) {
   }, [list]);
 
   const sum = (rs) => rs.reduce((s, r) => s + r.total, 0);
+  const colorOf = useMemo(() => counterColors(stores), [stores]);
+
+  // Group one shift's reports by store — every store in the catalog appears (or only the filtered one), so stores
+  // nobody counted are visible too. Per store: reports in counter order, plus the small counters NOT counted yet.
+  const byStore = (rs) => {
+    const order = new Map();
+    for (const s of stores) s.bigCounters.forEach((b, i) => order.set(b.id, i));
+    const groups = new Map();
+    for (const s of stores)
+      if (!storeId || s.id === storeId) groups.set(s.id, { storeId: s.id, storeName: s.name, total: 0, reports: [] });
+    for (const r of rs) {
+      const g = groups.get(r.storeId) || { storeId: r.storeId, storeName: r.storeName, total: 0, reports: [] };
+      g.total += r.total;
+      g.reports.push(r);
+      groups.set(r.storeId, g);
+    }
+    const list = [...groups.values()].sort((a, b) => a.storeName.localeCompare(b.storeName));
+    for (const g of list) {
+      g.reports.sort((a, b) =>
+        (order.get(a.bigCounterId) ?? 99) - (order.get(b.bigCounterId) ?? 99) ||
+        a.bigCounterName.localeCompare(b.bigCounterName) || a.smallCounterName.localeCompare(b.smallCounterName));
+      const store = stores.find((s) => s.id === g.storeId);
+      const counted = new Set(g.reports.map((r) => r.smallCounterId));
+      const smalls = store ? store.bigCounters.flatMap((b) => b.smallCounters) : [];
+      g.counterCount = smalls.length;
+      g.countedCount = smalls.filter((c) => counted.has(c.id)).length;
+      g.missing = store
+        ? store.bigCounters
+            .map((b) => ({ big: b, smalls: b.smallCounters.filter((c) => !counted.has(c.id)) }))
+            .filter((m) => m.smalls.length)
+        : [];
+    }
+    return list.filter((g) => g.reports.length || g.counterCount);
+  };
+  // Ca 1 and Ca 2 are always listed (an empty one is a missing count); Giao ca 1-2 only when it has reports.
+  const shiftsToShow = (d) => SHIFTS.filter(({ value }) => value !== 3 || d.shifts[3].length);
 
   return (
     <>
@@ -77,37 +123,82 @@ function Reports({ fail }) {
 
       {!list && <p className="muted center">Đang tải…</p>}
       {list && !days.length && <p className="muted center">Chưa có báo cáo trong khoảng này</p>}
+      {list && days.length > 0 && (
+        <p className="count-legend small">
+          <span className="legend-dot ok" /> Đã đếm <span className="legend-dot warn" /> Chưa đếm
+        </p>
+      )}
 
       {days.map((d) => (
         <section key={d.date}>
           <h2 className="section">{fmtDate(d.date)} · Tổng {fmt(d.total)}</h2>
           <div className="stats">
-            {[1, 2].map((s) => (
-              <div key={s} className="stat"><span className="muted">Ca {s}</span><strong>{fmt(sum(d.shifts[s]))}</strong></div>
+            {SHIFTS.map(({ value: s }) => (
+              <div key={s} className="stat"><span className="muted">{shiftLabel(s)}</span><strong>{fmt(sum(d.shifts[s]))}</strong></div>
             ))}
           </div>
-          {[1, 2].map((s) => d.shifts[s].length > 0 && (
+          {shiftsToShow(d).map(({ value: s }) => (
             <div className="group" key={s}>
-              <div className="group-title">Ca {s}</div>
-              {d.shifts[s].map((r) => (
-                <div key={r.id} className="report">
+              <div className="group-title">
+                {shiftLabel(s)}
+                {!d.shifts[s].length && <span className="shift-empty"> · chưa có báo cáo</span>}
+              </div>
+              {byStore(d.shifts[s]).map((g) => (
+                <div key={g.storeId} className="store-block">
+                  <div className="store-bar">
+                    <StoreIcon size={18} />
+                    <b>{g.storeName}</b>
+                    {g.counterCount > 0 && (
+                      <span className={`progress-pill ${g.countedCount >= g.counterCount ? 'ok' : 'warn'}`}>
+                        Đã đếm {g.countedCount}/{g.counterCount}
+                      </span>
+                    )}
+                    <span className="store-bar-total">{fmt(g.total)}</span>
+                  </div>
+              {g.reports.map((r) => (
+                <div key={r.id} className="report counted">
                   <button className="report-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
-                    <div>
-                      <b>{r.storeName}</b>
-                      <div className="muted small">{r.bigCounterName} › {r.smallCounterName} · {r.userName} · {r.time}</div>
+                    <div className="report-title">
+                      <div className="report-counter">
+                        <span className="tick" aria-label="Đã đếm">✓</span>
+                        <CounterBadge color={colorOf(r.bigCounterId)}>{r.bigCounterName}</CounterBadge>
+                        <b>{r.smallCounterName}</b>
+                      </div>
+                      <div className="muted small">{r.userName}{r.partnerName ? ` + ${r.partnerName}` : ''} · {r.time}{r.editCount > 0 && <span className="edited"> · đã sửa</span>}</div>
                     </div>
                     <strong>{fmt(r.total)}</strong>
                   </button>
                   {open === r.id && (
                     <div className="report-detail">
-                      {r.trays.map((t, i) => (
+                      {r.note && <p className="counter-note-view">{r.note}</p>}
+                      {r.positions.map((t, i) => (
                         <div key={i} className="detail-row">
-                          <span>Khay {t.no}</span><b>{fmt(t.quantity)}</b>
+                          <span>Vị trí {t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>
                           <div className="photos">
                             {t.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" /></a>)}
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+                  {g.missing.length > 0 && (
+                    <div className="missing">
+                      <div className="missing-title">
+                        {g.countedCount ? `Chưa đếm · ${g.counterCount - g.countedCount} quầy` : 'Chưa đếm quầy nào'}
+                      </div>
+                      {g.missing.map((m) => {
+                        const whole = m.smalls.length === m.big.smallCounters.length && m.smalls.length > 1;
+                        return (
+                          <div key={m.big.id} className="missing-line">
+                            <CounterBadge color={colorOf(m.big.id)}>{m.big.name}</CounterBadge>
+                            {whole
+                              ? <span className="miss-chip">cả quầy · {m.smalls.length}</span>
+                              : m.smalls.map((c) => <span key={c.id} className="miss-chip">{c.name}</span>)}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -191,6 +282,7 @@ function Actions({ onEdit, onDelete }) {
 
 function Catalog({ ask, fail }) {
   const [stores, setStores] = useState(null);
+  const colorOf = useMemo(() => counterColors(stores), [stores]);
   const load = useCallback(() => api.get('/stores').then(setStores).catch(fail), []);
   useEffect(() => { load(); }, [load]);
 
@@ -222,7 +314,7 @@ function Catalog({ ask, fail }) {
             {s.bigCounters.map((b) => (
               <div key={b.id} className="big">
                 <div className="row-between">
-                  <b>{b.name}</b>
+                  <CounterBadge color={colorOf(b.id)}>{b.name}</CounterBadge>
                   <Actions
                     onEdit={() => rename('Sửa quầy lớn', b.name, `/admin/counters/${b.id}`)}
                     onDelete={() => remove(`quầy "${b.name}"`, `/admin/counters/${b.id}`)} />

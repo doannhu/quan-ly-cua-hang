@@ -63,5 +63,6 @@ export async function connectMongo({ mongoUri, mongoDb }) {
     stores: new MongoRepo(db.collection('stores')),
     counters: new MongoRepo(db.collection('counters')),
     reports: new MongoRepo(db.collection('reports')),
+    snapshots: new MongoRepo(db.collection('snapshots')),
   };
 }

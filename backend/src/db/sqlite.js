@@ -84,6 +84,8 @@ export async function connectSqlite({ sqlitePath }) {
     stores: new SqliteRepo(db, 'stores'),
     counters: new SqliteRepo(db, 'counters'),
     reports: new SqliteRepo(db, 'reports'),
+    // system stock imported from PMV (one document per store + date)
+    snapshots: new SqliteRepo(db, 'snapshots'),
   };
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_nameKey ON users (json_extract(data, '$.nameKey'));
