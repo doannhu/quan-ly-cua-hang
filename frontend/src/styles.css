@@ -452,3 +452,14 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .scope-btn.on .scope-count { color: rgba(255, 255, 255, 0.85); }
 .scope-help { margin: 10px 0 0; }
 .shared-note { font-size: 12px; color: var(--warn); font-weight: 600; }
+
+/* compare buttons before a BC008 file is uploaded: greyed out */
+.scope-btn:disabled { cursor: not-allowed; color: var(--muted); border-color: var(--sep); background: var(--fill); opacity: 0.7; }
+.scope-btn:disabled .scope-dot { background: var(--muted); }
+.source-tag.off { background: var(--fill); color: var(--muted); }
+.scope-off .scope-head b { color: var(--muted); }
+
+/* multi-select sheet (link one app counter to several PMV products) */
+.sheet-head h3 { flex: 1; text-align: center; font-size: 16px; min-width: 0; }
+.bold-link { font-weight: 700 !important; }
+.sheet-hint { margin: 8px 4px 0; }

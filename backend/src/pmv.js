@@ -113,3 +113,40 @@ export function suggestPmvName(bigName, smallName, pmvNames) {
   }
   return tie ? null : best;
 }
+
+// Silver products («bạc») — e.g. Bạc món Dây, Kiềng cổ bạc.
+export const isSilver = (name) => tokens(name).has('bac');
+
+// Big counters whose small counters map to one product per purity grade, e.g. «Quầy vàng y › Bông» =
+// «Bông 980» + «Bông 995». Each grade lists accepted name suffixes in order of preference: the BC008 file only has
+// «… 995» for Bông and «… 999» (same gold code V999) for Dây/Lắc/Mặt/Nhẫn/Vòng.
+export const PURITY_COUNTERS = [{ bigWords: ['vang', 'y'], grades: [['980'], ['995', '999']] }];
+const GENERIC = new Set(['quay', 'vang']); // words in big-counter names that say nothing about the product
+
+/**
+ * Suggested PMV products for an app small counter (an array; [] = no confident suggestion):
+ *  1. purity counters (Quầy vàng y): «<small> 980» + «<small> 995|999», whichever exist in the file;
+ *  2. the single name-based match (suggestPmvName);
+ *  3. fallback when no PMV name contains the small counter's words (e.g. «5 chỉ» in Quầy nhẫn tròn):
+ *     the one PMV product containing all meaningful words of the big counter («Nhẫn Tròn 9999»).
+ */
+export function suggestPmvNames(bigName, smallName, pmvNames) {
+  const big = tokens(bigName);
+  const byNorm = new Map(pmvNames.map((n) => [norm(n).replace(/\s+/g, ' ').trim(), n]));
+  const rule = PURITY_COUNTERS.find((r) => r.bigWords.every((w) => big.has(w)));
+  if (rule) {
+    const found = rule.grades
+      .map((suffixes) => suffixes.map((s) => byNorm.get(norm(`${smallName} ${s}`))).find(Boolean))
+      .filter(Boolean);
+    if (found.length) return found;
+  }
+  const one = suggestPmvName(bigName, smallName, pmvNames);
+  if (one) return [one];
+  const small = tokens(smallName);
+  if (!pmvNames.some((n) => [...small].every((w) => tokens(n).has(w)))) {
+    const words = [...big].filter((w) => !GENERIC.has(w));
+    const hits = words.length ? pmvNames.filter((n) => words.every((w) => tokens(n).has(w))) : [];
+    if (hits.length === 1) return hits;
+  }
+  return [];
+}

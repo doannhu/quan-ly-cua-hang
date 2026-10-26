@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { UploadIcon } from '../components/icons.jsx';
 import {
-  Chevron, CounterBadge, Picker, SHIFTS, Segmented, counterColors, fmt, fmtDate, shiftLabel,
+  Chevron, CounterBadge, MultiPicker, Picker, SHIFTS, Segmented, counterColors, fmt, fmtDate, shiftLabel,
 } from '../components/ui.jsx';
 
 const todayIso = () => {
@@ -48,6 +48,9 @@ export default function Comparison({ ask, fail }) {
     api.get(`/admin/comparison?${new URLSearchParams({ storeId, date, shift })}`).then(setData).catch(fail);
   }, [storeId, date, shift]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (data && !data.snapshot) setScope('all');
+  }, [data]);
 
   const pickStore = (id) => {
     setStoreId(id);
@@ -74,18 +77,19 @@ export default function Comparison({ ask, fail }) {
     }
   };
 
-  const link = async (counterId, pmvName) => {
+  // save the PMV products (one or several) an app counter corresponds to; [] = unlink
+  const link = async (counterId, pmvNames) => {
     try {
-      await api.patch(`/admin/counters/${counterId}`, { pmvName: pmvName || null });
+      await api.patch(`/admin/counters/${counterId}`, { pmvNames });
       load();
     } catch (e) {
       fail(e);
     }
   };
   const confirmSuggestions = async () => {
-    const auto = data.rows.flatMap((r) => r.counters.filter((c) => c.auto).map((c) => [c.counterId, r.pmvName]));
+    const auto = data.rows.flatMap((r) => r.counters.filter((c) => c.auto).map((c) => [c.counterId, c.pmvNames]));
     try {
-      for (const [id, name] of auto) await api.patch(`/admin/counters/${id}`, { pmvName: name });
+      for (const [id, names] of auto) await api.patch(`/admin/counters/${id}`, { pmvNames: names });
       load();
     } catch (e) {
       fail(e);
@@ -126,11 +130,11 @@ export default function Comparison({ ask, fail }) {
   const autoCount = data ? data.rows.reduce((n, r) => n + r.counters.filter((c) => c.auto).length, 0) : 0;
   // every app small counter with its current link, for the "Ghép quầy" list — those needing action first:
   // not linked, then suggested (unconfirmed), then confirmed
-  const linkRank = (c) => (!c.pmvName ? 0 : c.auto ? 1 : 2);
+  const linkRank = (c) => (!c.pmvNames.length ? 0 : c.auto ? 1 : 2);
   const links = data
     ? [
-        ...data.rows.flatMap((r) => r.counters.map((c) => ({ ...c, pmvName: r.pmvName }))),
-        ...data.unmatched.map((c) => ({ ...c, pmvName: '' })),
+        ...data.rows.flatMap((r) => r.counters),
+        ...data.unmatched.map((c) => ({ ...c, pmvNames: [] })),
       ].sort((a, b) => linkRank(a) - linkRank(b) || a.bigName.localeCompare(b.bigName) || a.name.localeCompare(b.name))
     : [];
 
@@ -190,29 +194,39 @@ export default function Comparison({ ask, fail }) {
           onChange={(e) => { upload(e.target.files[0]); e.target.value = ''; }} />
       </div>
 
-      {data?.snapshot && (
-        <div className="scope-card group">
+      {/* compare buttons: always visible; greyed out until a BC008 file exists for this store/day */}
+      {data && (
+        <div className={`scope-card group ${data.snapshot ? '' : 'scope-off'}`}>
           <div className="scope-head">
             <b>So sánh</b>
-            <span className="source-tag">Ca {shift === 3 ? '1-2' : shift} · cột «{data.systemSource}» của BC008</span>
+            <span className={`source-tag ${data.snapshot ? '' : 'off'}`}>
+              {data.snapshot
+                ? `Ca ${shift === 3 ? '1-2' : shift} · cột «${data.systemSource}» của BC008`
+                : 'Chưa có file BC008'}
+            </span>
           </div>
           <div className="scope-bar">
-            <button className={`scope-btn scope-all ${scope === 'all' ? 'on' : ''}`} style={{ '--c': '#0a63c9' }}
-              onClick={() => { setScope('all'); setFilter('all'); }}>
-              So sánh tất cả <span className="scope-count">{data.rows.filter((r) => r.counted).length}/{data.rows.length}</span>
+            <button className={`scope-btn scope-all ${data.snapshot && scope === 'all' ? 'on' : ''}`} style={{ '--c': '#0a63c9' }}
+              disabled={!data.snapshot} onClick={() => { setScope('all'); setFilter('all'); }}>
+              So sánh tất cả
+              {data.snapshot && <span className="scope-count">{data.rows.filter((r) => r.counted).length}/{data.rows.length}</span>}
             </button>
             {bigs.map((b) => {
               const st = bigStats(b.id);
               return (
-                <button key={b.id} className={`scope-btn ${scope === b.id ? 'on' : ''}`} style={{ '--c': colorOf(b.id) }}
-                  onClick={() => { setScope(b.id); setFilter('all'); }}>
+                <button key={b.id} className={`scope-btn ${data.snapshot && scope === b.id ? 'on' : ''}`} style={{ '--c': colorOf(b.id) }}
+                  disabled={!data.snapshot} onClick={() => { setScope(b.id); setFilter('all'); }}>
                   <span className="scope-dot" />{b.name}
-                  <span className="scope-count">{st.counted}/{st.linked}</span>
+                  {data.snapshot && <span className="scope-count">{st.counted}/{st.linked}</span>}
                 </button>
               );
             })}
           </div>
-          <p className="muted small scope-help">Số bên cạnh: quầy PMV đã đếm / đã ghép. Ca 1 so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».</p>
+          <p className="muted small scope-help">
+            {data.snapshot
+              ? 'Số bên cạnh: quầy PMV đã đếm / đã ghép. Ca 1 so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».'
+              : `Tải file BC008 ngày ${fmtDate(date)} ở trên để bật các nút so sánh. Ca 1 sẽ so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».`}
+          </p>
         </div>
       )}
 
@@ -336,10 +350,11 @@ export default function Comparison({ ask, fail }) {
                 )}
                 {!data.pmvNames.length && <p className="muted pad small">Tải file BC008 để có danh sách quầy PMV.</p>}
                 {links.map((c) => (
-                  <Picker key={c.counterId} stacked
+                  <MultiPicker key={c.counterId}
                     label={<>{counterChips([c], true)}</>}
                     sheetTitle={`${c.bigName} › ${c.name}`}
-                    value={c.pmvName} placeholder="Chưa ghép" clearLabel="Không ghép"
+                    hint="Chọn một hoặc nhiều quầy PMV — tồn sẽ được cộng lại (ví dụ Bông 980 + Bông 995)."
+                    values={c.pmvNames} placeholder="Chưa ghép"
                     disabled={!data.pmvNames.length}
                     onChange={(v) => link(c.counterId, v)}
                     options={data.pmvNames.map((n) => ({ value: n, label: n }))} />

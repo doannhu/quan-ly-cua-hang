@@ -45,7 +45,7 @@ export const openapi = {
           { name: 'date', in: 'query', required: true, schema: { type: 'string', format: 'date' } },
           { name: 'shift', in: 'query', required: true, schema: { type: 'integer', enum: [1, 2, 3] } },
         ],
-        responses: { 200: { description: '{ snapshot (null if no PMV file uploaded for that day), rows: [{pmvName, pmvBigName, goldCodes, system, actual, diff, counted, counters: [{counterId, bigName, name, actual, auto}]}], unmatched: [app counters not linked to PMV], totals: {system, actual, diff} }. diff = actual - system; negative = missing goods. auto=true means the link is a name-based suggestion not yet confirmed by admin.' } },
+        responses: { 200: { description: '{ snapshot (null if no PMV file uploaded for that day), rows: [{pmvName (group label, e.g. "Bông 980 + Bông 995"), pmvNames, pmvBigName, goldCodes, system, actual, diff, counted, counters: [{counterId, bigName, name, actual, pmvNames, auto}]}] — one row per group of linked PMV products; an app counter can link to several products and several counters to one product, unmatched: [app counters not linked to PMV], totals: {system, actual, diff} }. diff = actual - system; negative = missing goods. auto=true means the link is a name-based suggestion not yet confirmed by admin.' } },
       },
     },
     '/api/admin/system-stock': {

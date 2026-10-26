@@ -104,6 +104,60 @@ export function counterColors(stores) {
     return COUNTER_COLORS[h % COUNTER_COLORS.length];
   };
 }
+// Stacked row that opens a sheet where several options can be ticked; saved with "Xong".
+// values: selected option values (array); onChange(newValues) is called only when they changed.
+export function MultiPicker({ label, sheetTitle, hint, values, options, onChange, placeholder = 'Chọn…', disabled }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(values);
+  const show = () => {
+    setDraft(values);
+    setOpen(true);
+  };
+  const toggle = (v) => setDraft((d) => (d.includes(v) ? d.filter((x) => x !== v) : [...d, v]));
+  const done = () => {
+    setOpen(false);
+    const same = draft.length === values.length && draft.every((v) => values.includes(v));
+    if (!same) onChange(draft);
+  };
+  const labels = values.map((v) => options.find((o) => o.value === v)?.label || v);
+  return (
+    <>
+      <button type="button" className="row picker stacked" disabled={disabled} onClick={show}>
+        <span className="stacked-text">
+          <span className="stacked-label">{label}</span>
+          <span className={`stacked-value ${values.length ? '' : 'placeholder'}`}>
+            {values.length ? `→ ${labels.join(' + ')}` : placeholder}
+          </span>
+        </span>
+        <Chevron />
+      </button>
+      {open && (
+        <div className="backdrop sheet-backdrop" onClick={() => setOpen(false)}>
+          <div className="sheet" role="dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-handle" />
+            <div className="sheet-head">
+              <button className="btn link" onClick={() => setDraft([])}>Bỏ chọn</button>
+              <h3>{sheetTitle}</h3>
+              <button className="btn link bold-link" onClick={done}>Xong</button>
+            </div>
+            {hint && <p className="muted small sheet-hint">{hint}</p>}
+            <p className="small sheet-hint">
+              {draft.length ? `Đã chọn ${draft.length}: ${draft.join(' + ')}` : 'Chưa chọn quầy PMV nào (không ghép)'}
+            </p>
+            <div className="sheet-list group">
+              {options.map((o) => (
+                <button key={o.value} className="sheet-item" onClick={() => toggle(o.value)}>
+                  <span>{o.label}</span>{draft.includes(o.value) && <CheckIcon size={20} />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Right-pointing iOS disclosure chevron; `open` rotates it to point down (for expandable rows).
 export const Chevron = ({ open }) => (
   <svg className={`chevron${open ? ' open' : ''}`} width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor"

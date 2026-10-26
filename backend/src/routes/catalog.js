@@ -63,16 +63,27 @@ export default function catalogRoutes(repos) {
     );
   });
   // Rename a counter and/or set which PMV quầy nhỏ it corresponds to (pmvName; null = unlink).
+  // pmvNames: the PMV quầy nhỏ this counter corresponds to — one or several (e.g. Bông 980 + Bông 995);
+  // [] or null = unlink. pmvName (single, older clients) is still accepted.
   r.patch('/admin/counters/:id', adm, async (req, res) => {
+    const pmvItem = z.string().trim().min(1).max(100);
     const b = z
-      .object({ name: z.string().trim().min(1).max(100).optional(), pmvName: z.string().trim().min(1).max(100).nullable().optional() })
+      .object({
+        name: z.string().trim().min(1).max(100).optional(),
+        pmvName: pmvItem.nullable().optional(),
+        pmvNames: z.array(pmvItem).max(20).nullable().optional(),
+      })
       .safeParse(req.body);
-    if (!b.success || (b.data.name === undefined && b.data.pmvName === undefined))
+    if (!b.success || (b.data.name === undefined && b.data.pmvName === undefined && b.data.pmvNames === undefined))
       return res.status(400).json({ error: 'Dữ liệu quầy không hợp lệ' });
     if (!(await counters.get(req.params.id))) return res.status(404).json({ error: 'Không tìm thấy quầy' });
     const patch = {};
     if (b.data.name !== undefined) patch.name = b.data.name;
-    if (b.data.pmvName !== undefined) patch.pmvName = b.data.pmvName;
+    const names = b.data.pmvNames !== undefined ? b.data.pmvNames : b.data.pmvName !== undefined ? (b.data.pmvName ? [b.data.pmvName] : []) : undefined;
+    if (names !== undefined) {
+      patch.pmvNames = [...new Set(names || [])];
+      patch.pmvName = null; // superseded by pmvNames
+    }
     res.json(await counters.update(req.params.id, patch));
   });
   r.delete('/admin/counters/:id', adm, async (req, res) => {

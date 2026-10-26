@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { adminOrAiKey, requireAuth, requireRole } from '../middleware/auth.js';
-import { parseBC008, suggestPmvName } from '../pmv.js';
+import { isSilver, parseBC008, suggestPmvNames } from '../pmv.js';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,9 +52,15 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const counted = new Map();
     for (const x of reportList) counted.set(x.smallCounterId, (counted.get(x.smallCounterId) || 0) + x.total);
 
+    // Silver products in a store without silver counters (e.g. Bạc món lines in the gold store's BC008) are not
+    // part of that store's count, so they are left out of the comparison.
+    const storeHasSilver = counterList.some((c) => isSilver(c.name));
+    const items = (snap?.items || []).filter((it) => storeHasSilver || !isSilver(it.smallName));
+    const excludedSilver = (snap?.items || []).filter((it) => !items.includes(it));
+
     // PMV lines grouped by quầy nhỏ (one quầy nhỏ may have several gold codes)
     const pmv = new Map();
-    for (const it of snap?.items || []) {
+    for (const it of items) {
       const g = pmv.get(it.smallName) || { pmvName: it.smallName, pmvBigName: it.bigName, goldCodes: [], system: 0 };
       g.system += Number(it[source.field]) || 0;
       if (it.goldCode && !g.goldCodes.includes(it.goldCode)) g.goldCodes.push(it.goldCode);
@@ -63,28 +69,64 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const pmvNames = [...pmv.keys()];
 
     const bigName = new Map(counterList.filter((c) => !c.parentId).map((c) => [c.id, c.name]));
-    const rows = new Map(pmvNames.map((n) => [n, { ...pmv.get(n), actual: 0, counters: [] }]));
+
+    // Links of an app small counter: the PMV products saved by admin (pmvNames; older data: pmvName), else one
+    // name-based suggestion. A counter may link to several products (e.g. Quầy vàng y › Bông = Bông 980 + Bông 995).
+    const linksOf = (c, big) => {
+      const saved = Array.isArray(c.pmvNames) ? c.pmvNames : c.pmvName ? [c.pmvName] : [];
+      if (saved.length) return { names: saved, auto: false };
+      const s = snap ? suggestPmvNames(big, c.name, pmvNames) : [];
+      return { names: s, auto: s.length > 0 };
+    };
+
+    // Comparison groups = connected PMV products: products linked to the same counter are compared together, and
+    // all counters linked into a group are summed (e.g. 6 "Quầy nhẫn tròn" counters -> Nhẫn Tròn 9999).
+    const parent = new Map();
+    const find = (x) => {
+      if (!parent.has(x)) parent.set(x, x);
+      while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); }
+      return x;
+    };
+    pmvNames.forEach(find);
+    const linked = [];
     const unmatched = [];
     for (const c of counterList.filter((x) => x.parentId)) {
       const entry = {
         counterId: c.id, name: c.name, bigId: c.parentId, bigName: bigName.get(c.parentId) || '',
         actual: counted.get(c.id) || 0, counted: counted.has(c.id),
       };
-      const pmvName = c.pmvName || (snap ? suggestPmvName(entry.bigName, c.name, pmvNames) : null);
-      if (!pmvName) { unmatched.push(entry); continue; }
-      entry.auto = !c.pmvName; // suggested, not confirmed by admin
-      // a saved link to a name that isn't in this file still shows up as its own row
-      if (!rows.has(pmvName)) rows.set(pmvName, { pmvName, pmvBigName: '', goldCodes: [], system: 0, actual: 0, counters: [], missingInFile: !!snap });
-      const row = rows.get(pmvName);
-      row.counters.push(entry);
-      row.actual += entry.actual;
+      const l = linksOf(c, entry.bigName);
+      entry.pmvNames = l.names;
+      entry.auto = l.auto; // suggested, not confirmed by admin
+      if (!l.names.length) { unmatched.push(entry); continue; }
+      for (const n of l.names.slice(1)) parent.set(find(n), find(l.names[0]));
+      linked.push(entry);
     }
+    const groups = new Map();
+    const groupOf = (root) => groups.get(root) || groups.set(root, { names: [], counters: [] }).get(root);
+    for (const n of parent.keys()) groupOf(find(n)).names.push(n);
+    for (const e of linked) groupOf(find(e.pmvNames[0])).counters.push(e);
 
-    const list = [...rows.values()].map((x) => ({
-      ...x,
-      counted: x.counters.some((c) => c.counted),
-      diff: x.actual - x.system,
-    }));
+    const order = new Map(pmvNames.map((n, i) => [n, i])); // keep the file's order inside a group
+    const list = [...groups.values()].map((g) => {
+      const names = g.names.sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9) || a.localeCompare(b));
+      const info = names.map((n) => pmv.get(n)).filter(Boolean);
+      const system = info.reduce((s, x) => s + x.system, 0);
+      const actual = g.counters.reduce((s, c) => s + c.actual, 0);
+      return {
+        pmvName: names.join(' + '), // display label of the group
+        pmvNames: names,
+        pmvBigName: [...new Set(info.map((x) => x.pmvBigName))].join(', '),
+        goldCodes: [...new Set(info.flatMap((x) => x.goldCodes))],
+        system,
+        actual,
+        counters: g.counters,
+        // a saved link to a product that isn't in this file
+        missingInFile: !!snap && names.some((n) => !pmv.has(n)),
+        counted: g.counters.some((c) => c.counted),
+        diff: actual - system,
+      };
+    });
     list.sort((a, b) => a.pmvBigName.localeCompare(b.pmvBigName) || a.pmvName.localeCompare(b.pmvName));
     const totals = {
       system: list.reduce((s, x) => s + x.system, 0),
@@ -99,6 +141,8 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
       rows: list,
       unmatched,
       pmvNames,
+      // silver lines left out (store has no silver counters): how many lines / items
+      excludedSilver: { lines: excludedSilver.length, qty: excludedSilver.reduce((t, it) => t + (Number(it[source.field]) || 0), 0) },
       totals,
       reportCount: reportList.length,
     });
