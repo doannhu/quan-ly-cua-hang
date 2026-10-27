@@ -463,3 +463,18 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .sheet-head h3 { flex: 1; text-align: center; font-size: 16px; min-width: 0; }
 .bold-link { font-weight: 700 !important; }
 .sheet-hint { margin: 8px 4px 0; }
+
+/* admin reports: prominent date header per day */
+.day-head {
+  display: flex; align-items: center; gap: 10px; margin: 26px 0 10px; padding: 10px 14px;
+  border-radius: 12px; background: color-mix(in srgb, var(--blue) 12%, var(--card)); box-shadow: inset 4px 0 0 var(--blue);
+}
+.day-head.is-today { background: color-mix(in srgb, var(--blue) 20%, var(--card)); }
+.day-icon { flex: none; width: 34px; height: 34px; border-radius: 9px; background: #0a63c9; color: #fff; display: grid; place-items: center; }
+.day-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.day-weekday { font-size: 13px; font-weight: 600; color: var(--blue); }
+.day-date { font-size: 21px; font-weight: 800; letter-spacing: -0.3px; }
+.today-pill { flex: none; font-size: 12px; font-weight: 700; color: #fff; background: #0a63c9; border-radius: 10px; padding: 3px 9px; }
+.day-total { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.day-total span { font-size: 12px; color: var(--muted); }
+.day-total b { font-size: 19px; font-variant-numeric: tabular-nums; }

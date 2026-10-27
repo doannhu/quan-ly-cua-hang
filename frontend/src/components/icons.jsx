@@ -75,3 +75,9 @@ export const UploadIcon = (p) => (
     <path d="M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" />
   </Svg>
 );
+export const CalendarIcon = (p) => (
+  <Svg {...p}>
+    <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </Svg>
+);

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
-import { ChartIcon, PencilIcon, StoreIcon, TrashIcon, UsersIcon } from '../components/icons.jsx';
+import { CalendarIcon, ChartIcon, PencilIcon, StoreIcon, TrashIcon, UsersIcon } from '../components/icons.jsx';
 import { CounterBadge, Picker, SHIFTS, Segmented, counterColors, fmt, fmtDate, shiftLabel, useDialog } from '../components/ui.jsx';
 import Comparison from './Comparison.jsx';
 
 const info = (title, message) => ({ title, message, actions: [{ label: 'OK', style: 'bold' }] });
+// "Thứ Hai", "Chủ Nhật"… for a YYYY-MM-DD date
+const weekday = (iso) => {
+  const w = new Date(`${iso}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long' });
+  return w.charAt(0).toUpperCase() + w.slice(1);
+};
 const today = (offset = 0) => {
   const d = new Date(Date.now() - offset * 864e5);
   return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -50,7 +55,7 @@ export default function Admin({ onBack }) {
 
 /* ---------------- Reports ---------------- */
 function Reports({ fail }) {
-  const [from, setFrom] = useState(today(6));
+  const [from, setFrom] = useState(today); // default: today only
   const [to, setTo] = useState(today());
   const [storeId, setStoreId] = useState('');
   const [stores, setStores] = useState([]);
@@ -131,7 +136,15 @@ function Reports({ fail }) {
 
       {days.map((d) => (
         <section key={d.date}>
-          <h2 className="section">{fmtDate(d.date)} · Tổng {fmt(d.total)}</h2>
+          <div className={`day-head ${d.date === today() ? 'is-today' : ''}`}>
+            <span className="day-icon"><CalendarIcon size={20} /></span>
+            <span className="day-text">
+              <span className="day-weekday">{weekday(d.date)}</span>
+              <b className="day-date">{fmtDate(d.date)}</b>
+            </span>
+            {d.date === today() && <span className="today-pill">Hôm nay</span>}
+            <span className="day-total"><span>Tổng</span><b>{fmt(d.total)}</b></span>
+          </div>
           <div className="stats">
             {SHIFTS.map(({ value: s }) => (
               <div key={s} className="stat"><span className="muted">{shiftLabel(s)}</span><strong>{fmt(sum(d.shifts[s]))}</strong></div>
