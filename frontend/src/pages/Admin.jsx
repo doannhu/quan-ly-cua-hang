@@ -247,7 +247,7 @@ function Staff({ ask, fail }) {
     message: 'Chọn thao tác',
     actions: [
       { label: 'Đổi mật khẩu', onClick: () => ask({
-          title: 'Mật khẩu mới', message: u.name, input: { type: 'text', placeholder: 'Tối thiểu 4 ký tự' },
+          title: 'Mật khẩu mới', message: u.name, input: { type: 'text', placeholder: 'Mật khẩu mới' },
           actions: [{ label: 'Hủy' }, { label: 'Lưu', style: 'bold', onClick: act((pw) => api.patch(`/users/${u.id}`, { password: pw })) }],
         }) },
       { label: u.active ? 'Vô hiệu hóa' : 'Kích hoạt lại', onClick: act(() => api.patch(`/users/${u.id}`, { active: !u.active })) },
@@ -266,9 +266,8 @@ function Staff({ ask, fail }) {
         <input placeholder="Tên nhân viên" value={name} onChange={(e) => setName(e.target.value)} />
         <input placeholder="Mật khẩu" value={password} onChange={(e) => setPassword(e.target.value)} />
         <div className="form-actions">
-          <button className="btn primary" disabled={!name.trim() || password.length < 4}>Lưu</button>
+          <button className="btn primary" disabled={!name.trim() || !password}>Lưu</button>
         </div>
-        {password && password.length < 4 && <p className="error small pad">Mật khẩu tối thiểu 4 ký tự</p>}
       </form>
 
       <h2 className="section">Danh sách ({users?.length ?? 0})</h2>

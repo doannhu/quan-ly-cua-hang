@@ -13,7 +13,7 @@ export default function userRoutes({ users }) {
 
   r.post('/', async (req, res) => {
     const b = z
-      .object({ name: z.string().trim().min(1).max(60), password: z.string().min(4).max(100) })
+      .object({ name: z.string().trim().min(1).max(60), password: z.string().min(1).max(100) })
       .safeParse(req.body);
     if (!b.success) return res.status(400).json({ error: 'Tên hoặc mật khẩu không hợp lệ (mật khẩu tối thiểu 4 ký tự)' });
     const nameKey = b.data.name.toLowerCase();
@@ -31,7 +31,7 @@ export default function userRoutes({ users }) {
 
   r.patch('/:id', async (req, res) => {
     const b = z
-      .object({ password: z.string().min(4).max(100).optional(), active: z.boolean().optional() })
+      .object({ password: z.string().min(1).max(100).optional(), active: z.boolean().optional() })
       .safeParse(req.body);
     if (!b.success) return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
     const patch = {};
