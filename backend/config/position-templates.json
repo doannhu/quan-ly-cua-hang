@@ -1,0 +1,102 @@
+{
+  "_huong_dan": [
+    "Các mục (dòng) nhân viên điền số lượng trong 'Báo cáo hàng thực tế', theo từng quầy nhỏ.",
+    "Sửa file này rồi tải lại trang là áp dụng, không cần khởi động lại server.",
+    "quy_tac: xét từ trên xuống, quy tắc đầu tiên khớp sẽ được dùng. quay_lon = tên quầy lớn trong app;",
+    "  quay_nho = danh sách tên quầy nhỏ (bỏ trống = mọi quầy nhỏ của quầy lớn đó). Không phân biệt hoa thường, dấu.",
+    "trong_tu: true = có dòng 'Trong tủ 1' và nút thêm 'Trong tủ 2, 3...'.",
+    "muc: các dòng cố định; '@ten' = chèn cả nhóm trong 'nhom'. 'Lí do khác' luôn tự thêm ở cuối.",
+    "mac_dinh: dùng cho quầy nhỏ không khớp quy tắc nào."
+  ],
+  "nhom": {
+    "chung": [
+      "Lỗi đợi xuất",
+      "Lỗi gửi sửa",
+      "Đã bán chưa xuất",
+      "Đơn sỉ chưa xuất",
+      "Khách cọc",
+      "Hàng mới nhập (chưa trưng)",
+      "Mới bán"
+    ],
+    "chung_nhan": [
+      "Đã bán chưa xuất",
+      "Đơn sỉ chưa xuất",
+      "Khách cọc",
+      "Hàng mới nhập (chưa trưng)",
+      "Mới bán"
+    ]
+  },
+  "quy_tac": [
+    {
+      "ghi_chu": "Dây cưới 610",
+      "quay_lon": "Quầy dây & mặt 610",
+      "quay_nho": ["Dây 610"],
+      "trong_tu": false,
+      "muc": [
+        "Cổ tường 1 - tầng 1", "Cổ tường 1 - tầng 2", "Cổ tường 2 - tầng 1", "Cổ tường 2 - tầng 2", "Dây liền mặt treo tủ",
+        "Mâm 1", "Mâm 2", "Mâm 3", "Mâm 4", "Mâm 5", "Mâm 6", "Mâm 7", "Mâm 8", "Mâm 9",
+        "@chung"
+      ]
+    },
+    {
+      "ghi_chu": "Mặt 610",
+      "quay_lon": "Quầy dây & mặt 610",
+      "quay_nho": ["Mặt 610"],
+      "trong_tu": false,
+      "muc": [
+        "Tỳ hưu", "Mâm 1", "Mâm 2", "Mâm 3", "Mặt charm", "Mặt xỏ sẵn charm", "Hộc",
+        "Lỗi gửi sửa", "Đã bán chưa xuất", "Đơn sỉ chưa xuất", "Khách cọc", "Hàng mới nhập (chưa trưng)", "Mới bán"
+      ]
+    },
+    {
+      "ghi_chu": "Vòng 610",
+      "quay_lon": "Quầy 610 L-V-D-M-B-LC",
+      "quay_nho": ["Vòng"],
+      "trong_tu": false,
+      "muc": ["Mâm 1", "Mâm 2", "Mâm 3", "Vòng cẩm thạch", "@chung"]
+    },
+    {
+      "ghi_chu": "Bông 610",
+      "quay_lon": "Quầy 610 L-V-D-M-B-LC",
+      "quay_nho": ["Bông"],
+      "trong_tu": false,
+      "muc": [
+        "Mâm 1", "Mâm 2", "Mâm 3",
+        "Treo giàn 1", "Treo giàn 2", "Treo giàn 3", "Treo giàn 4", "Treo giàn 5",
+        "Treo giàn 6", "Treo giàn 7", "Treo giàn 8", "Treo giàn 9", "Treo giàn 10",
+        "Lỗi đợi xuất", "Lỗi gửi sửa", "Bán khách chưa xuất", "Đơn sỉ đợi xuất", "Khách cọc", "Mới bán"
+      ]
+    },
+    {
+      "ghi_chu": "Các quầy nhỏ khác của quầy 610 (Lắc, Kiềng...)",
+      "quay_lon": "Quầy 610 L-V-D-M-B-LC",
+      "trong_tu": true,
+      "muc": ["@chung"]
+    },
+    {
+      "ghi_chu": "Nhẫn nam 610, nhẫn cưới 610",
+      "quay_lon": "Quầy nhẫn 610",
+      "quay_nho": ["Nhẫn nam", "Nhẫn cưới"],
+      "trong_tu": false,
+      "muc": ["Mâm 1", "Mâm 2", "@chung_nhan"]
+    },
+    {
+      "ghi_chu": "Nhẫn nữ 610",
+      "quay_lon": "Quầy nhẫn 610",
+      "quay_nho": ["Nhẫn nữ"],
+      "trong_tu": false,
+      "muc": ["Mâm 1", "Mâm 2", "Mâm 3", "Mâm 4", "Mâm 5", "Mâm 6", "Mâm 7", "Mâm 8", "@chung_nhan"]
+    },
+    {
+      "ghi_chu": "Nhẫn 9999",
+      "quay_lon": "Quầy nhẫn tròn",
+      "trong_tu": true,
+      "muc": ["@chung_nhan"]
+    },
+    { "ghi_chu": "Nít", "quay_lon": "Quầy nít", "trong_tu": true, "muc": ["@chung"] },
+    { "ghi_chu": "Simen", "quay_lon": "Quầy simen", "trong_tu": true, "muc": ["@chung"] },
+    { "ghi_chu": "Vàng trắng 610", "quay_lon": "Quầy vàng trắng 10k", "trong_tu": true, "muc": ["@chung"] },
+    { "ghi_chu": "Vàng y 980, 995, 999", "quay_lon": "Quầy vàng y", "trong_tu": true, "muc": ["@chung"] }
+  ],
+  "mac_dinh": { "trong_tu": true, "muc": ["@chung"] }
+}

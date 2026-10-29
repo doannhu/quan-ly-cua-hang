@@ -9,6 +9,7 @@ import userRoutes from './routes/users.js';
 import reportRoutes from './routes/reports.js';
 import uploadRoutes from './routes/uploads.js';
 import comparisonRoutes from './routes/comparison.js';
+import templateRoutes from './routes/templates.js';
 import { openapi } from './openapi.js';
 
 const repos = await connectDb(config);
@@ -31,6 +32,7 @@ app.use('/api', catalogRoutes(repos));
 app.use('/api', uploadRoutes());
 app.use('/api', reportRoutes(repos));
 app.use('/api', comparisonRoutes(repos));
+app.use('/api', templateRoutes(repos));
 
 // AI-agent friendly read-only helpers
 app.get('/api/ai/stores', adminOrAiKey, async (_req, res) => res.json(await loadCatalog(repos)));

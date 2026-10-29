@@ -4,9 +4,10 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { adminOrAiKey, requireAuth } from '../middleware/auth.js';
 
-// A position (vị trí hàng) inside a small counter: number, optional note (hộc, kệ…), count, photos.
+// A row (mục) of a small counter: its label ("Mâm 1", "Trong tủ 2", "Lí do khác"; older reports: a position number),
+// note (the typed reason for "Lí do khác"), count (0 when nothing there) and photos.
 const positionInput = z.object({
-  no: z.string().trim().min(1).max(20),
+  no: z.string().trim().min(1).max(60),
   note: z.string().trim().max(60).default(''),
   quantity: z.number().int().min(0).max(1_000_000),
   photos: z.array(z.string().regex(/^\/uploads\/[\w.-]+$/)).max(20).default([]),

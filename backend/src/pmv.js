@@ -41,7 +41,7 @@ const ddmmyyyy = (s) => {
  * Parse a BC008 export. Every CSV record repeats the report header, then holds one line:
  * store, quầy lớn, quầy nhỏ, mã vàng, and 6 groups of [SL, TL vàng, TLV+H, Vàng quy 10]:
  * Đầu ngày, Nhập, Bán lẻ, Bán sỉ, Xuất hàng, Còn lại. "Còn lại" is the system stock we compare with.
- * Returns { reportCode, storeName, fromDate, toDate, items: [{bigName, smallName, goldCode, ...}] }.
+ * Returns { reportCode, storeName, address, fromDate, toDate, items: [{bigName, smallName, goldCode, ...}] }.
  */
 export function parseBC008(text) {
   const rows = parseCsv(String(text || '').replace(/^﻿/, ''));
@@ -66,6 +66,7 @@ export function parseBC008(text) {
   const toDate = ddmmyyyy(/Đến ngày:?\s*([\d/]+)/i.exec(period)?.[1]);
   if (!toDate) throw new Error('Không đọc được ngày của báo cáo trong file');
   const storeName = clean(first[dataStart] || '').replace(/^[^:]*:\s*/, '') || clean(first[0]).replace(/^Cửa hàng:\s*/i, '');
+  const address = clean(first.find((v) => /^\s*Địa chỉ:/i.test(v)) || '').replace(/^Địa chỉ:\s*/i, '');
 
   const items = rows
     .filter((r) => r.length > dataStart + 4 + 24 && clean(r[dataStart + 2]))
@@ -82,7 +83,7 @@ export function parseBC008(text) {
       weight: num(at(r, 'Còn lại', 1)),
     }));
   if (!items.length) throw new Error('File BC008 không có dòng hàng nào');
-  return { reportCode: 'BC008', storeName, fromDate, toDate, items };
+  return { reportCode: 'BC008', storeName, address, fromDate, toDate, items };
 }
 
 // ---------- matching app counters to PMV quầy nhỏ ----------
@@ -150,3 +151,9 @@ export function suggestPmvNames(bigName, smallName, pmvNames) {
   }
   return [];
 }
+
+// Numbers in a text, e.g. "209 Nguyễn Thụy, Q.Phú" -> ["209"] (used to match a file's address to a store name).
+export const numbersIn = (s) => (String(s || '').match(/\d+/g) || []);
+// "Vang Hoa Tung 209 Nguyen Thuy" -> "VangHoaTung209NguyenThuy"
+export const nameCode = (s) =>
+  norm(s).split(/[^a-z0-9]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('');

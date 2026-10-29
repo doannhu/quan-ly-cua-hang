@@ -12,8 +12,10 @@ const reportShape =
   '{id, submissionId, date, time, shift, userName, partnerName (who counted together at a shift-3 handover, else null), ' +
   'storeId, storeName, bigCounterId, bigCounterName, ' +
   'smallCounterId, smallCounterName, note, total, positions: [{no, note, quantity, photos[]}]}. ' +
-  'The report-level note is a free-text comment for the whole small counter; positions[].note describes ' +
-  'one position (e.g. hộc, kệ). Both may be empty. Reports sharing a submissionId were submitted together. ' +
+  'The report-level note is a free-text comment for the whole small counter. positions[] are the rows (mục) of the ' +
+  'small counter from config/position-templates.json: no is the row label (e.g. "Mâm 1", "Trong tủ 2", "Khách cọc", ' +
+  '"Lí do khác"; older reports: a position number) and quantity may be 0; positions[].note is the typed reason of ' +
+  '"Lí do khác". Reports sharing a submissionId were submitted together. ' +
   'Staff may edit their own submission on the same day; edited reports carry editedAt and editCount (>0).';
 
 export const openapi = {

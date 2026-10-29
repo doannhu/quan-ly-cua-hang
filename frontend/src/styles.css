@@ -478,3 +478,45 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .day-total { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .day-total span { font-size: 12px; color: var(--muted); }
 .day-total b { font-size: 19px; font-variant-numeric: tabular-nums; }
+
+/* staff: "Kiểm tra kết quả" on submitted reports — status only (khớp / lệch), no quantities */
+.sub-line-right { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.res-chip { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
+.chip-khop { background: #1f7a3a; }
+.chip-lech { background: #c4271b; }
+.chip-cho, .chip-chua_ghep { background: var(--fill); color: var(--muted); }
+.sub-line.res-lech { box-shadow: inset 4px 0 0 var(--short); }
+.sub-line.res-khop { box-shadow: inset 4px 0 0 var(--ok); }
+.sub-line { flex-wrap: wrap; }
+.wait-note { flex-basis: 100%; color: var(--muted); margin-top: 2px; }
+.check-box { margin: 0; padding: 10px 16px; font-size: 14px; font-weight: 600; border-top: 0.5px solid var(--sep); }
+.cb-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--card)); }
+.cb-lech { color: var(--short); background: color-mix(in srgb, var(--short) 10%, var(--card)); }
+.cb-pending, .cb-wait { color: var(--muted); background: var(--fill); }
+.cb-error { color: var(--short); }
+.sub-actions { display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 0.5px solid var(--sep); }
+.sub-actions .btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 10px; font-size: 15px; }
+.check-btn { background: #0a63c9; color: #fff; }
+.check-btn:disabled { opacity: 0.6; }
+.edit-btn { background: var(--fill); color: var(--blue); }
+
+/* staff report rows (mục) of a small counter: label | quantity | photo | delete */
+.positions .pos-head, .positions .pos { grid-template-columns: 1fr 72px 44px 28px; }
+.positions .pos-head span:first-child { text-align: left; }
+.pos .pos-label { font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
+.pos-wrap.cabinet .pos-label { font-weight: 600; }
+.pos-wrap.other { background: color-mix(in srgb, var(--blue) 5%, transparent); }
+.pos .pos-other { grid-column: 1 / -1; text-align: left; font-size: 15px; }
+.pos .pos-other.need { box-shadow: inset 0 0 0 1.5px var(--red); }
+.add-cabinet { padding-top: 6px; padding-bottom: 10px; font-size: 15px; }
+
+/* ---------- uploaded BC008 files ---------- */
+.file-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
+.file-item.current { background: color-mix(in srgb, var(--blue, #0a63c9) 8%, transparent); }
+.file-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.file-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.link-btn { background: none; border: 0; padding: 6px 4px; font-size: 15px; flex-shrink: 0; }
+.cleanup-bar { display: flex; gap: 8px; padding: 10px 16px 12px; flex-wrap: wrap; }
+.cleanup-btn { flex: 1; min-width: 140px; padding: 9px 10px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 8%, transparent); color: var(--red); font-size: 14px; font-weight: 600; }
+.cleanup-btn:disabled { opacity: .4; }

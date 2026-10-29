@@ -15,5 +15,7 @@ export const config = {
   jwtSecret: required('JWT_SECRET'),
   aiApiKey: process.env.AI_API_KEY || '',
   uploadDir: process.env.UPLOAD_DIR || './uploads',
+  // rows of the staff report per small counter (see config/position-templates.json)
+  positionTemplatesPath: process.env.POSITION_TEMPLATES || './config/position-templates.json',
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 };

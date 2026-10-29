@@ -33,6 +33,8 @@ export default function Comparison({ ask, fail }) {
   const [showLinks, setShowLinks] = useState(false);
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [showFiles, setShowFiles] = useState(false);
   const fileInput = useRef(null);
   const colorOf = useMemo(() => counterColors(stores), [stores]);
 
@@ -58,22 +60,99 @@ export default function Comparison({ ask, fail }) {
     localStorage.setItem('cmpStore', id);
   };
 
+  // uploaded BC008 files of the selected store
+  const loadFiles = useCallback(() => {
+    if (storeId) api.get(`/admin/system-stock?storeId=${storeId}`).then(setFiles).catch(fail);
+  }, [storeId]);
+  useEffect(() => { loadFiles(); }, [loadFiles]);
+
+  // Upload: the server first checks the file (standard name + warnings), the admin confirms, then it is saved
+  // for the shift selected in "Ca đếm".
   const upload = async (file) => {
     if (!file) return;
     setBusy(true);
     try {
-      const res = await api.post('/admin/system-stock', { storeId, fileName: file.name, csv: await file.text() });
+      const body = { storeId, shift, fileName: file.name, csv: await file.text() };
+      const pre = await api.post('/admin/system-stock', { ...body, dryRun: true });
+      const save = async () => {
+        setBusy(true);
+        try {
+          const res = await api.post('/admin/system-stock', body);
+          loadFiles();
+          if (res.date !== date) setDate(res.date); // jump to the file's date
+          else load();
+        } catch (e) {
+          fail(e);
+        } finally {
+          setBusy(false);
+        }
+      };
       ask({
-        title: 'Đã tải tồn hệ thống',
-        message: `${res.pmvStoreName}\nNgày ${fmtDate(res.date)} · ${res.items} dòng · ${fmt(res.totalQty)} món`,
-        actions: [{ label: 'OK', style: 'bold' }],
+        title: pre.warnings.length ? `⚠️ ${pre.warnings.length} cảnh báo` : 'Lưu file BC008?',
+        message: [
+          `Tên lưu: ${pre.name}`,
+          `File gốc: ${file.name}`,
+          `Ngày tồn: ${fmtDate(pre.date)} · ${pre.shiftName}`,
+          `PMV: ${pre.pmvStoreName}${pre.pmvAddress ? ` — ${pre.pmvAddress}` : ''}`,
+          `${pre.lines} dòng · ${fmt(pre.totalQty)} món`,
+          ...(pre.warnings.length ? ['', ...pre.warnings.map((w) => `⚠️ ${w}`)] : []),
+        ].join('\n'),
+        actions: [
+          { label: 'Hủy' },
+          { label: pre.warnings.length ? 'Vẫn lưu' : 'Lưu', style: pre.warnings.length ? 'danger' : 'bold', onClick: save },
+        ],
       });
-      if (res.date !== date) setDate(res.date); // jump to the file's date
-      else load();
     } catch (e) {
       fail(e);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const removeFile = (f) => ask({
+    title: 'Xóa file BC008?',
+    message: `${f.name}\nNgày tồn ${fmtDate(f.date)} · ${f.shiftName}`,
+    actions: [
+      { label: 'Hủy' },
+      { label: 'Xóa', style: 'danger', onClick: async () => {
+        try {
+          await api.del(`/admin/system-stock/${f.id}`);
+          loadFiles();
+          load();
+        } catch (e) {
+          fail(e);
+        }
+      } },
+    ],
+  });
+
+  // delete the store's files whose stock date is older than 1 or 2 weeks
+  const cleanup = async (days) => {
+    try {
+      const pre = await api.post('/admin/system-stock/cleanup', { storeId, olderThanDays: days, dryRun: true });
+      const label = days === 7 ? '1 tuần' : '2 tuần';
+      if (!pre.count) {
+        ask({ title: 'Không có file cũ', message: `Không có file nào có ngày tồn trước ${fmtDate(pre.cutoff)} (cũ hơn ${label}).`, actions: [{ label: 'OK', style: 'bold' }] });
+        return;
+      }
+      ask({
+        title: `Xóa ${pre.count} file cũ hơn ${label}?`,
+        message: `Các file BC008 của ${store?.name || 'cửa hàng'} có ngày tồn trước ${fmtDate(pre.cutoff)} sẽ bị xóa vĩnh viễn.`,
+        actions: [
+          { label: 'Hủy' },
+          { label: `Xóa ${pre.count} file`, style: 'danger', onClick: async () => {
+            try {
+              await api.post('/admin/system-stock/cleanup', { storeId, olderThanDays: days });
+              loadFiles();
+              load();
+            } catch (e) {
+              fail(e);
+            }
+          } },
+        ],
+      });
+    } catch (e) {
+      fail(e);
     }
   };
 
@@ -179,19 +258,50 @@ export default function Comparison({ ask, fail }) {
           <span className="row-label">Tồn hệ thống</span>
           {!data ? <span className="muted">…</span> : data.snapshot ? (
             <span className="snap-info">
-              <span className="snap-file">{data.snapshot.fileName || 'PMV BC008'}</span>
-              <span className="muted small">{data.snapshot.lines} dòng · tải {stamp(data.snapshot.uploadedAt)}{data.snapshot.uploadedBy ? ` · ${data.snapshot.uploadedBy}` : ''}</span>
+              <span className="snap-file">{data.snapshot.name}</span>
+              <span className="muted small">
+                {data.snapshot.shift ? data.snapshot.shiftName : 'Không rõ ca (dùng cho mọi ca)'} · {data.snapshot.lines} dòng · tải {stamp(data.snapshot.uploadedAt)}{data.snapshot.uploadedBy ? ` · ${data.snapshot.uploadedBy}` : ''}
+              </span>
             </span>
           ) : (
-            <span className="snap-info muted">Chưa có cho ngày {fmtDate(date)}</span>
+            <span className="snap-info muted">Chưa có cho ngày {fmtDate(date)} · {shiftLabel(shift)}</span>
           )}
         </div>
         <button className="add-row upload-row" disabled={!storeId || busy} onClick={() => fileInput.current.click()}>
           <span className="icon-tile tile-blue"><UploadIcon size={18} /></span>
-          {busy ? 'Đang tải…' : data?.snapshot ? 'Tải lại file BC008 (.csv)' : 'Tải file tồn kho PMV BC008 (.csv)'}
+          {busy ? 'Đang tải…' : `${data?.snapshot?.shift === shift ? 'Tải lại' : 'Tải'} file BC008 (.csv) cho ${shiftLabel(shift)}`}
         </button>
         <input ref={fileInput} type="file" accept=".csv,text/csv" hidden
           onChange={(e) => { upload(e.target.files[0]); e.target.value = ''; }} />
+      </div>
+
+      {/* uploaded files of this store */}
+      <div className="group spaced">
+        <button className="row list-item" onClick={() => setShowFiles(!showFiles)}>
+          <span className="list-left"><span className="icon-tile tile-gray">🗂</span>Các file BC008 đã tải</span>
+          <span className="muted list-right">{files.length} file <Chevron open={showFiles} /></span>
+        </button>
+        {showFiles && (
+          <>
+            {files.map((f) => (
+              <div key={f.id} className={`row file-item ${data?.snapshot?.id === f.id ? 'current' : ''}`}>
+                <span className="file-info">
+                  <span className="file-name">{f.name}</span>
+                  <span className="muted small">
+                    Tồn {fmtDate(f.date)} · {f.shiftName} · {f.lines} dòng · tải {stamp(f.uploadedAt)}{f.uploadedBy ? ` · ${f.uploadedBy}` : ''}
+                  </span>
+                  {f.originalFileName && f.originalFileName !== f.name && <span className="muted small">File gốc: {f.originalFileName}</span>}
+                </span>
+                <button className="link-btn danger-text" onClick={() => removeFile(f)}>Xóa</button>
+              </div>
+            ))}
+            {!files.length && <p className="muted center pad small">Chưa có file nào</p>}
+            <div className="cleanup-bar">
+              <button className="cleanup-btn" disabled={!files.length} onClick={() => cleanup(7)}>Xóa file cũ hơn 1 tuần</button>
+              <button className="cleanup-btn" disabled={!files.length} onClick={() => cleanup(14)}>Xóa file cũ hơn 2 tuần</button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* compare buttons: always visible; greyed out until a BC008 file exists for this store/day */}

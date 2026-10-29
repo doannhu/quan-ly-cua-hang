@@ -1,45 +1,126 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { adminOrAiKey, requireAuth, requireRole } from '../middleware/auth.js';
-import { isSilver, parseBC008, suggestPmvNames } from '../pmv.js';
+import { config } from '../config.js';
+import { isSilver, nameCode, numbersIn, parseBC008, suggestPmvNames } from '../pmv.js';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const SHIFT_NAME = { 1: 'Ca 1', 2: 'Ca 2', 3: 'Giao ca 1-2' };
+const SHIFT_CODE = { 1: 'Ca1', 2: 'Ca2', 3: 'GiaoCa1-2' };
+const dmy = (iso) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`; // 27-10-2026
+const dmySlash = (iso) => dmy(iso).replaceAll('-', '/'); // 27/10/2026
+// now in the shop's timezone: { date: 'YYYY-MM-DD', hh, mm }
+function nowLocal(at = new Date()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, hh: p.hour, mm: p.minute };
+}
+// Standard name of an uploaded BC008: BC008_<store>_<dd-mm-yyyy of the stock>_<shift>_<HHhMM of the upload>
+const standardName = (storeName, date, shift, hh, mm) =>
+  `BC008_${nameCode(storeName)}_${dmy(date)}_${SHIFT_CODE[shift] || 'KhongRoCa'}_${hh}h${mm}`;
+// Public view of a stored snapshot (uploads from before shifts were recorded have no shift / standard name)
+function snapInfo(s, storeName) {
+  const t = nowLocal(new Date(s.createdAt));
+  return {
+    id: s.id, date: s.date, shift: s.shift ?? null, shiftName: SHIFT_NAME[s.shift] || 'Không rõ ca',
+    name: s.name || standardName(storeName, s.date, s.shift, t.hh, t.mm),
+    originalFileName: s.originalFileName || s.fileName || '',
+    uploadedAt: s.createdAt, uploadedBy: s.uploadedBy, lines: s.items.length,
+    pmvStoreName: s.pmvStoreName, pmvAddress: s.pmvAddress || '',
+  };
+}
 
 // Compare counted stock (staff reports) with system stock imported from PMV, per PMV quầy nhỏ.
 export default function comparisonRoutes({ snapshots, reports, stores, counters }) {
   const r = Router();
   const adm = [requireAuth, requireRole('admin')];
 
-  // Upload a PMV BC008 CSV for one store. Body: { storeId, fileName, csv }. Replaces that store's
-  // snapshot for the file's date ("Đến ngày").
+  // Upload a PMV BC008 CSV for one store and shift. Body: { storeId, shift, fileName, csv, dryRun? }.
+  // dryRun=true only parses and returns the standard name + warnings (nothing saved), so the admin can confirm.
+  // Saving replaces the file of the same store + date ("Đến ngày" in the file) + shift.
   r.post('/admin/system-stock', adm, async (req, res) => {
-    const b = z.object({ storeId: z.string(), fileName: z.string().max(200).default(''), csv: z.string().min(1) }).safeParse(req.body);
-    if (!b.success) return res.status(400).json({ error: 'Thiếu cửa hàng hoặc nội dung file' });
-    if (!(await stores.get(b.data.storeId))) return res.status(400).json({ error: 'Cửa hàng không hợp lệ' });
+    const b = z.object({
+      storeId: z.string(), shift: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      fileName: z.string().max(200).default(''), csv: z.string().min(1), dryRun: z.boolean().default(false),
+    }).safeParse(req.body);
+    if (!b.success) return res.status(400).json({ error: 'Thiếu cửa hàng, ca hoặc nội dung file' });
+    const store = await stores.get(b.data.storeId);
+    if (!store) return res.status(400).json({ error: 'Cửa hàng không hợp lệ' });
     let parsed;
     try {
       parsed = parseBC008(b.data.csv);
     } catch (e) {
       return res.status(400).json({ error: e.message });
     }
+    const { shift, fileName } = b.data;
     const date = parsed.toDate;
-    for (const old of await snapshots.find({ storeId: b.data.storeId, date })) await snapshots.remove(old.id);
+    const now = nowLocal();
+    const name = standardName(store.name, date, shift, now.hh, now.mm);
+
+    const warnings = [];
+    const fileNum = numbersIn(parsed.address)[0]; // house number in the file's address, e.g. 209
+    const storeNums = numbersIn(store.name);
+    if (fileNum && storeNums.length && !storeNums.includes(fileNum))
+      warnings.push(`File là của cửa hàng địa chỉ «${parsed.address}» nhưng bạn đang chọn «${store.name}».`);
+    const m = /(\d{2})(\d{2})(\d{4})/.exec(fileName) || /(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})/.exec(fileName);
+    if (m) {
+      const fromName = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+      if (fromName !== date)
+        warnings.push(`Tên file ghi ngày ${dmySlash(fromName)} nhưng nội dung BC008 là ngày ${dmySlash(date)} — sẽ lưu theo ngày ${dmySlash(date)}.`);
+    }
+    if (parsed.fromDate && parsed.fromDate !== date)
+      warnings.push(`File gồm nhiều ngày (từ ${dmySlash(parsed.fromDate)} đến ${dmySlash(date)}).`);
+    if (date > now.date) warnings.push(`Ngày trong file (${dmySlash(date)}) ở tương lai.`);
+    const existing = (await snapshots.find({ storeId: store.id, date })).filter((s) => (s.shift ?? null) === shift);
+    if (existing.length) warnings.push(`Sẽ thay file đã tải trước đó: ${snapInfo(existing[0], store.name).name}.`);
+
+    const summary = {
+      name, date, shift, shiftName: SHIFT_NAME[shift], storeName: store.name, pmvStoreName: parsed.storeName,
+      pmvAddress: parsed.address, lines: parsed.items.length, totalQty: parsed.items.reduce((t, x) => t + x.qty, 0), warnings,
+    };
+    if (b.data.dryRun) return res.json({ dryRun: true, ...summary });
+
+    for (const old of existing) await snapshots.remove(old.id);
     const snap = await snapshots.insert({
-      storeId: b.data.storeId, date, source: 'PMV BC008', fileName: b.data.fileName,
-      pmvStoreName: parsed.storeName, fromDate: parsed.fromDate, toDate: parsed.toDate,
+      storeId: store.id, date, shift, name, source: 'PMV BC008', originalFileName: fileName, fileName: name,
+      pmvStoreName: parsed.storeName, pmvAddress: parsed.address, fromDate: parsed.fromDate, toDate: parsed.toDate,
       uploadedBy: req.user.name, items: parsed.items,
     });
-    res.status(201).json({ id: snap.id, date, items: snap.items.length, totalQty: snap.items.reduce((s, x) => s + x.qty, 0), pmvStoreName: parsed.storeName });
+    res.status(201).json({ id: snap.id, ...summary, items: summary.lines });
   });
 
-  // GET /api/admin/comparison?storeId=&date=YYYY-MM-DD&shift=1|2|3
-  r.get('/admin/comparison', adminOrAiKey, async (req, res) => {
-    const { storeId, date } = req.query;
-    const shift = Number(req.query.shift);
-    if (!storeId || !DATE.test(date || '') || ![1, 2, 3].includes(shift))
-      return res.status(400).json({ error: 'Cần storeId, date (YYYY-MM-DD) và shift (1, 2, 3)' });
+  // Uploaded BC008 files of a store, newest stock date first. GET /api/admin/system-stock?storeId=
+  r.get('/admin/system-stock', adminOrAiKey, async (req, res) => {
+    const store = req.query.storeId && (await stores.get(req.query.storeId));
+    if (!store) return res.status(400).json({ error: 'Cần storeId hợp lệ' });
+    const list = await snapshots.find({ storeId: store.id }, { sort: { date: -1, createdAt: -1 } });
+    res.json(list.map((s) => snapInfo(s, store.name)));
+  });
 
-    const [snap] = await snapshots.find({ storeId, date });
+  // Delete one uploaded file. DELETE /api/admin/system-stock/:id
+  r.delete('/admin/system-stock/:id', adm, async (req, res) => {
+    const ok = await snapshots.remove(req.params.id);
+    ok ? res.status(204).end() : res.status(404).json({ error: 'Không tìm thấy file' });
+  });
+
+  // Delete a store's files whose stock date is more than N days before today.
+  // POST /api/admin/system-stock/cleanup { storeId, olderThanDays: 7 | 14, dryRun? } -> { count, cutoff, deleted }
+  r.post('/admin/system-stock/cleanup', adm, async (req, res) => {
+    const b = z.object({ storeId: z.string(), olderThanDays: z.number().int().min(1).max(365), dryRun: z.boolean().default(false) }).safeParse(req.body);
+    if (!b.success) return res.status(400).json({ error: 'Dữ liệu không hợp lệ' });
+    const today = new Date(`${nowLocal().date}T00:00:00Z`);
+    const cutoff = new Date(today.getTime() - b.data.olderThanDays * 864e5).toISOString().slice(0, 10);
+    const old = (await snapshots.find({ storeId: b.data.storeId })).filter((s) => s.date < cutoff);
+    if (!b.data.dryRun) for (const s of old) await snapshots.remove(s.id);
+    res.json({ count: old.length, cutoff, deleted: !b.data.dryRun });
+  });
+
+  // The comparison of one store/day/shift (shared by the admin screen and the staff result check).
+  async function buildComparison(storeId, date, shift) {
+    // the file uploaded for this shift; older uploads (before shifts were recorded) apply to every shift of the day
+    const sameDay = await snapshots.find({ storeId, date }, { sort: { createdAt: -1 } });
+    const snap = sameDay.find((s) => s.shift === shift) || sameDay.find((s) => s.shift == null);
+    const storeName = (await stores.get(storeId))?.name || '';
     // Which BC008 column is the system stock for this shift: Ca 1 is counted at the start of the day, so it is
     // compared with "Đầu ngày"; Ca 2 and Giao ca 1-2 are compared with "Còn lại".
     const source = shift === 1 ? { field: 'openingQty', label: 'Đầu ngày' } : { field: 'qty', label: 'Còn lại' };
@@ -134,10 +215,10 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     };
     totals.diff = totals.actual - totals.system;
 
-    res.json({
+    return {
       storeId, date, shift,
       systemSource: source.label, // BC008 column used as system stock: "Đầu ngày" (Ca 1) or "Còn lại" (Ca 2, Giao ca 1-2)
-      snapshot: snap ? { id: snap.id, fileName: snap.fileName, pmvStoreName: snap.pmvStoreName, uploadedAt: snap.createdAt, uploadedBy: snap.uploadedBy, lines: snap.items.length } : null,
+      snapshot: snap ? (({ name, ...info }) => ({ ...info, name, fileName: name }))(snapInfo(snap, storeName)) : null,
       rows: list,
       unmatched,
       pmvNames,
@@ -145,15 +226,48 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
       excludedSilver: { lines: excludedSilver.length, qty: excludedSilver.reduce((t, it) => t + (Number(it[source.field]) || 0), 0) },
       totals,
       reportCount: reportList.length,
-    });
+    };
+  }
+
+  // GET /api/admin/comparison?storeId=&date=YYYY-MM-DD&shift=1|2|3
+  r.get('/admin/comparison', adminOrAiKey, async (req, res) => {
+    const { storeId, date } = req.query;
+    const shift = Number(req.query.shift);
+    if (!storeId || !DATE.test(date || '') || ![1, 2, 3].includes(shift))
+      return res.status(400).json({ error: 'Cần storeId, date (YYYY-MM-DD) và shift (1, 2, 3)' });
+    res.json(await buildComparison(storeId, date, shift));
   });
 
-  // Dates that have an uploaded system stock for a store (newest first).
-  r.get('/admin/system-stock', adminOrAiKey, async (req, res) => {
-    if (!req.query.storeId) return res.status(400).json({ error: 'Cần storeId' });
-    const list = await snapshots.find({ storeId: req.query.storeId }, { sort: { date: -1 }, limit: 60 });
-    res.json(list.map(({ id, date, fileName, createdAt, uploadedBy, items }) => ({ id, date, fileName, uploadedAt: createdAt, uploadedBy, lines: items.length })));
+  // Staff: result of their own submission against the admin's BC008 upload — status only, never quantities.
+  // GET /api/reports/submissions/:submissionId/check
+  //  -> { status: 'pending' }                         no BC008 for that store/day yet ("Chưa có kết quả từ admin")
+  //  -> { status: 'ready', allOk, counters: [{ reportId, bigCounterName, smallCounterName,
+  //        result: 'khop' | 'lech' | 'cho' | 'chua_ghep', waitingFor?: [counter names] }] }
+  //     khop/lech: the counter's comparison group matches / doesn't; cho: other counters in the same group are
+  //     not counted yet; chua_ghep: the counter isn't linked to a PMV product.
+  r.get('/reports/submissions/:submissionId/check', requireAuth, async (req, res) => {
+    const mine = await reports.find({ submissionId: req.params.submissionId });
+    if (!mine.length) return res.status(404).json({ error: 'Không tìm thấy báo cáo' });
+    const first = mine[0];
+    if (first.userId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Không có quyền' });
+    const c = await buildComparison(first.storeId, first.date, first.shift);
+    if (!c.snapshot) return res.json({ status: 'pending', date: first.date, shift: first.shift });
+
+    const groupOf = new Map();
+    for (const row of c.rows) for (const x of row.counters) groupOf.set(x.counterId, row);
+    const result = mine
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((r) => {
+        const base = { reportId: r.id, bigCounterName: r.bigCounterName, smallCounterName: r.smallCounterName };
+        const row = groupOf.get(r.smallCounterId);
+        if (!row) return { ...base, result: 'chua_ghep' };
+        const waiting = row.counters.filter((x) => !x.counted);
+        if (waiting.length) return { ...base, result: 'cho', waitingFor: waiting.map((x) => `${x.bigName} › ${x.name}`) };
+        return { ...base, result: row.diff === 0 ? 'khop' : 'lech' };
+      });
+    res.json({ status: 'ready', date: first.date, shift: first.shift, allOk: result.every((x) => x.result === 'khop'), counters: result });
   });
+
 
   return r;
 }

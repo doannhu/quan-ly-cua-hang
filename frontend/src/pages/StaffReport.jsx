@@ -4,29 +4,60 @@ import { CameraIcon, CheckIcon } from '../components/icons.jsx';
 import { Picker, Row, SHIFTS, Segmented, fmt, shiftLabel, useDialog } from '../components/ui.jsx';
 
 let seq = 0;
-const newPosition = (no) => ({ key: ++seq, no: String(no), note: '', qty: '', photos: [] });
-const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', positions: [newPosition(1)] });
+const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', positions: [] });
 const defaultShift = () => (new Date().getHours() < 14 ? 1 : 2);
 const HANDOVER = 3; // "Giao ca 1-2"
-const qtyOf = (p) => parseInt(p.qty, 10) || 0;
+const qtyOf = (p) => parseInt(p.qty, 10) || 0; // blank = 0
 const sectionTotal = (s) => s.positions.reduce((sum, p) => sum + qtyOf(p), 0);
-// Suggestions for the optional position note; staff can type anything.
-const NOTE_SUGGESTIONS = ['Hộc', 'Kệ', 'Tủ', 'Khay', 'Ngăn', 'Móc', 'Tủ kính'];
 
-// Turn a saved submission (its per-counter reports) back into form state. Saved photos keep their URL.
+// Each small counter has fixed rows (mục) from the config file (GET /api/position-templates):
+//   cabinet rows "Trong tủ 1, 2…" (staff can add more) when the counter has them, the fixed items, and "Lí do khác"
+//   (typed reason) last. kind: 'cabinet' | 'item' | 'other' | 'extra' (a saved row no longer in the template).
+const LABELS = { other: 'Lí do khác', cabinet: 'Trong tủ' };
+const FALLBACK = { cabinet: true, items: [] };
+const lc = (s) => String(s).trim().toLocaleLowerCase('vi');
+const row = (kind, no, saved) => ({
+  key: ++seq, kind, no, note: saved?.note || '',
+  qty: saved?.quantity ? String(saved.quantity) : '', // 0 shows as blank, like a new row
+  photos: (saved?.photos || []).map((url) => ({ id: ++seq, url, preview: url })),
+});
+const cabinetRe = () => new RegExp(`^${LABELS.cabinet} (\\d+)$`, 'i');
+// Build the rows of a counter from its template, filling in saved positions (when editing) by label.
+function buildRows(tpl, saved = []) {
+  const left = [...saved];
+  const take = (test) => {
+    const i = left.findIndex((p) => test(String(p.no)));
+    return i < 0 ? null : left.splice(i, 1)[0];
+  };
+  const rows = [];
+  if (tpl.cabinet) {
+    const cabs = left.filter((p) => cabinetRe().test(p.no));
+    for (const p of cabs) left.splice(left.indexOf(p), 1);
+    if (!cabs.length) rows.push(row('cabinet', `${LABELS.cabinet} 1`));
+    cabs.forEach((p, i) => rows.push(row('cabinet', `${LABELS.cabinet} ${i + 1}`, p)));
+  }
+  for (const item of tpl.items) rows.push(row('item', item, take((no) => lc(no) === lc(item))));
+  const other = take((no) => lc(no) === lc(LABELS.other));
+  // rows saved earlier that the template doesn't have (e.g. older "Vị trí 1" reports) stay, so nothing is lost
+  rows.push(...left.map((p) => row('extra', String(p.no), p)));
+  rows.push(row('other', LABELS.other, other));
+  return rows;
+}
+const rowLabel = (p) => (/^\d+$/.test(p.no) ? `Vị trí ${p.no}` : p.no);
+const renumberCabinets = (rows) => {
+  let n = 0;
+  return rows.map((p) => (p.kind === 'cabinet' ? { ...p, no: `${LABELS.cabinet} ${++n}` } : p));
+};
+
+// A saved submission (its per-counter reports) as form state; rows are built once the templates arrive.
 const sectionsFrom = (editing) =>
   editing.reports.map((r) => ({
     key: ++seq,
     bigId: r.bigCounterId,
     smallId: r.smallCounterId,
     note: r.note || '',
-    positions: r.positions.map((p) => ({
-      key: ++seq,
-      no: String(p.no),
-      note: p.note || '',
-      qty: String(p.quantity),
-      photos: (p.photos || []).map((url) => ({ id: ++seq, url, preview: url })),
-    })),
+    positions: [],
+    saved: r.positions,
   }));
 
 // `editing` (optional): a submission from "Báo cáo đã nộp hôm nay" to edit and resubmit.
@@ -39,6 +70,9 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   // "Giao ca 1-2" is counted by two people: pick the other staff member.
   const [partnerId, setPartnerId] = useState(() => editing?.partnerId || '');
   const [staff, setStaff] = useState([]);
+  // rows of each small counter of the selected store: { [smallCounterId]: { cabinet, items } }
+  const [templates, setTemplates] = useState(null);
+  const tplOf = (smallId) => templates?.[smallId] || FALLBACK;
   const isHandover = shift === HANDOVER;
   const [now, setNow] = useState(new Date());
   const [busy, setBusy] = useState(false);
@@ -52,6 +86,22 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
     const t = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!storeId) return;
+    setTemplates(null);
+    api.get(`/position-templates?storeId=${storeId}`)
+      .then((r) => setTemplates(r.counters))
+      .catch((e) => {
+        setTemplates({});
+        ask(info('Không tải được các mục báo cáo', e.message));
+      });
+  }, [storeId]);
+  // when editing, turn the saved positions into rows once the templates are known
+  useEffect(() => {
+    if (templates)
+      setSections((ss) => ss.map((s) => (s.saved ? { ...s, positions: buildRows(tplOf(s.smallId), s.saved), saved: null } : s)));
+  }, [templates]);
 
   const store = catalog?.find((s) => s.id === storeId);
   const bigOf = (s) => store?.bigCounters.find((b) => b.id === s.bigId);
@@ -68,12 +118,17 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   const patchSection = (sk, fn) => setSections((ss) => ss.map((s) => (s.key === sk ? fn(s) : s)));
   const patchPosition = (sk, pk, patch) =>
     patchSection(sk, (s) => ({ ...s, positions: s.positions.map((p) => (p.key === pk ? { ...p, ...patch } : p)) }));
-  const addPosition = (sk) =>
+  // add "Trong tủ N" after the last cabinet row
+  const addCabinet = (sk) =>
     patchSection(sk, (s) => {
-      const nums = s.positions.map((p) => parseInt(p.no, 10)).filter((n) => !isNaN(n));
-      return { ...s, positions: [...s.positions, newPosition((nums.length ? Math.max(...nums) : s.positions.length) + 1)] };
+      const at = s.positions.findLastIndex((p) => p.kind === 'cabinet') + 1;
+      const rows = [...s.positions.slice(0, at), row('cabinet', ''), ...s.positions.slice(at)];
+      return { ...s, positions: renumberCabinets(rows) };
     });
-  const removePosition = (sk, pk) => patchSection(sk, (s) => ({ ...s, positions: s.positions.filter((p) => p.key !== pk) }));
+  const removePosition = (sk, pk) =>
+    patchSection(sk, (s) => ({ ...s, positions: renumberCabinets(s.positions.filter((p) => p.key !== pk)) }));
+  const pickSmall = (sk, smallId) =>
+    patchSection(sk, (s) => ({ ...s, smallId, positions: smallId ? buildRows(tplOf(smallId)) : [] }));
   const removeSection = (sk) => setSections((ss) => ss.filter((s) => s.key !== sk));
 
   const addPhotos = (files) => {
@@ -98,8 +153,10 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
       const label = `Quầy ${i + 1}`;
       if (!s.bigId) return `${label}: vui lòng chọn quầy lớn`;
       if (!s.smallId) return `${label}: vui lòng chọn quầy nhỏ`;
-      if (s.positions.some((p) => !p.no.trim())) return `${label}: vui lòng nhập số vị trí`;
-      if (s.positions.some((p) => !/^\d+$/.test(p.qty))) return `${label}: vui lòng nhập số lượng hàng cho mỗi vị trí`;
+      if (!s.positions.length) return `${label}: đang tải các mục, vui lòng đợi`;
+      if (s.positions.some((p) => p.qty && !/^\d+$/.test(p.qty))) return `${label}: số lượng không hợp lệ`;
+      if (s.positions.some((p) => p.kind === 'other' && qtyOf(p) > 0 && !p.note.trim()))
+        return `${label}: vui lòng nhập lí do khác`;
     }
     const ids = sections.map((s) => s.smallId);
     if (new Set(ids).size !== ids.length) return 'Mỗi quầy nhỏ chỉ được chọn một lần';
@@ -122,7 +179,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
               s.positions.map(async (p) => ({
                 no: p.no.trim(),
                 note: p.note.trim(),
-                quantity: parseInt(p.qty, 10),
+                quantity: qtyOf(p), // blank = 0
                 // keep already-saved photos, upload new ones
                 photos: await Promise.all(
                   p.photos.map(async (x) => x.url || (await api.upload(await compressImage(x.file))).url),
@@ -148,12 +205,10 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
     if (problem) return ask(info('Chưa đủ thông tin', problem));
     const lines = sections.map((s) => `• ${bigOf(s).name} › ${smallOf(s).name}: ${fmt(sectionTotal(s))}`).join('\n');
     ask({
-      title: editing ? 'Nộp lại báo cáo?' : 'Nộp thông tin?',
+      title: editing ? 'Nộp lại số' : 'Nộp số',
       message: `${store.name} · ${shiftLabel(shift)}${
         isHandover ? `\nĐếm cùng: ${staff.find((u) => u.id === partnerId)?.name || ''}` : ''
-      }\n${lines}\nTổng ${fmt(total)} hàng. ${
-        editing ? 'Thông tin mới sẽ thay thế báo cáo đã nộp lúc ' + editing.time + '.' : 'Bạn chắc chắn muốn nộp?'
-      }`,
+      }\n${lines}${editing ? `\n\nSố mới sẽ thay thế báo cáo đã nộp lúc ${editing.time}.` : ''}`,
       actions: [{ label: 'Hủy' }, { label: editing ? 'Nộp lại' : 'Nộp', style: 'bold', onClick: submit }],
     });
   };
@@ -244,34 +299,44 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
             </div>
             <div className="group">
               <Picker label="Quầy lớn" value={s.bigId} disabled={!store}
-                onChange={(v) => patchSection(s.key, (x) => ({ ...x, bigId: v, smallId: '' }))}
+                onChange={(v) => patchSection(s.key, (x) => ({ ...x, bigId: v, smallId: '', positions: [] }))}
                 options={(store?.bigCounters || []).map((x) => ({ value: x.id, label: x.name }))} />
-              <Picker label="Quầy nhỏ" value={s.smallId} disabled={!big}
-                onChange={(v) => patchSection(s.key, (x) => ({ ...x, smallId: v }))}
+              <Picker label="Quầy nhỏ" value={s.smallId} disabled={!big || !templates}
+                onChange={(v) => pickSmall(s.key, v)}
                 options={(big?.smallCounters || []).filter((x) => !taken.has(x.id)).map((x) => ({ value: x.id, label: x.name }))} />
             </div>
 
+            {s.smallId && (
             <div className="group positions">
               <div className="pos-head">
-                <span>Vị trí</span><span>Số lượng</span><span>Chú thích</span><span>Ảnh</span>
+                <span>Mục</span><span>Số lượng</span><span>Ảnh</span><span />
               </div>
-              {s.positions.map((p) => (
-                <div className="pos" key={p.key}>
-                  <input className="pos-no" inputMode="numeric" aria-label="Vị trí số" value={p.no}
-                    onChange={(e) => patchPosition(s.key, p.key, { no: e.target.value })} />
-                  <input className="pos-qty" inputMode="numeric" placeholder="0" aria-label="Số lượng" value={p.qty}
+              {!s.positions.length && <p className="muted center pad small">Đang tải các mục…</p>}
+              {s.positions.map((p, pi) => {
+                const cabinets = s.positions.filter((x) => x.kind === 'cabinet').length;
+                const lastCabinet = p.kind === 'cabinet' && s.positions[pi + 1]?.kind !== 'cabinet';
+                return (
+                <div key={p.key} className={`pos-wrap ${p.kind}`}>
+                <div className="pos">
+                  <span className="pos-label">
+                    {rowLabel(p)}
+                    {p.kind === 'extra' && p.note && <span className="muted"> · {p.note}</span>}
+                  </span>
+                  <input className="pos-qty" inputMode="numeric" placeholder="0" aria-label={`Số lượng ${rowLabel(p)}`} value={p.qty}
                     onChange={(e) => patchPosition(s.key, p.key, { qty: e.target.value.replace(/\D/g, '') })} />
-                  <input className="pos-note" list="position-notes" placeholder="Hộc, kệ…"
-                    aria-label="Chú thích vị trí (không bắt buộc)" maxLength={60} value={p.note}
-                    onChange={(e) => patchPosition(s.key, p.key, { note: e.target.value })} />
                   <button className="cam" aria-label="Thêm ảnh"
                     onClick={() => { fileFor.current = { sk: s.key, pk: p.key }; fileInput.current.click(); }}>
                     <CameraIcon size={20} />
                     {p.photos.length > 0 && <span className="cam-count">{p.photos.length}</span>}
                   </button>
-                  {s.positions.length > 1 ? (
-                    <button className="pos-del" aria-label="Xóa vị trí" onClick={() => removePosition(s.key, p.key)}>×</button>
+                  {(p.kind === 'cabinet' && cabinets > 1) || p.kind === 'extra' ? (
+                    <button className="pos-del" aria-label={`Xóa ${rowLabel(p)}`} onClick={() => removePosition(s.key, p.key)}>×</button>
                   ) : <span />}
+                  {p.kind === 'other' && (
+                    <input className={`pos-other ${qtyOf(p) > 0 && !p.note.trim() ? 'need' : ''}`} maxLength={60}
+                      placeholder="Nhập lí do khác…" aria-label="Lí do khác" value={p.note}
+                      onChange={(e) => patchPosition(s.key, p.key, { note: e.target.value })} />
+                  )}
                   {p.photos.length > 0 && (
                     <div className="photos">
                       {p.photos.map((x) => (
@@ -283,8 +348,14 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
                     </div>
                   )}
                 </div>
-              ))}
-              <button className="add-row" onClick={() => addPosition(s.key)}><span className="plus">+</span> Thêm vị trí</button>
+                {lastCabinet && (
+                  <button className="add-row add-cabinet" onClick={() => addCabinet(s.key)}>
+                    <span className="plus">+</span> Thêm {LABELS.cabinet.toLocaleLowerCase('vi')} {cabinets + 1}
+                  </button>
+                )}
+                </div>
+                );
+              })}
               <div className="row counter-total">
                 <span>Tổng {small ? small.name : `quầy ${i + 1}`}</span>
                 <strong>{fmt(sectionTotal(s))}</strong>
@@ -296,6 +367,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
                   onChange={(e) => patchSection(s.key, (x) => ({ ...x, note: e.target.value }))} />
               </div>
             </div>
+            )}
           </section>
         );
       })}
@@ -306,9 +378,6 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
         </button>
       </div>
 
-      <datalist id="position-notes">
-        {NOTE_SUGGESTIONS.map((n) => <option key={n} value={n} />)}
-      </datalist>
       <input ref={fileInput} type="file" accept="image/*" multiple hidden
         onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
 

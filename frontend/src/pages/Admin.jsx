@@ -5,6 +5,8 @@ import { CounterBadge, Picker, SHIFTS, Segmented, counterColors, fmt, fmtDate, s
 import Comparison from './Comparison.jsx';
 
 const info = (title, message) => ({ title, message, actions: [{ label: 'OK', style: 'bold' }] });
+// a report row worth listing: counted something, or has a note/photos (rows left at 0 are skipped)
+const shownRow = (t) => t.quantity > 0 || t.note || t.photos?.length;
 // "Thứ Hai", "Chủ Nhật"… for a YYYY-MM-DD date
 const weekday = (iso) => {
   const w = new Date(`${iso}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long' });
@@ -184,9 +186,9 @@ function Reports({ fail }) {
                   {open === r.id && (
                     <div className="report-detail">
                       {r.note && <p className="counter-note-view">{r.note}</p>}
-                      {r.positions.map((t, i) => (
+                      {r.positions.filter(shownRow).map((t, i) => (
                         <div key={i} className="detail-row">
-                          <span>Vị trí {t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>
+                          <span>{/^\d+$/.test(t.no) ? `Vị trí ${t.no}` : t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>
                           <div className="photos">
                             {t.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" /></a>)}
                           </div>
