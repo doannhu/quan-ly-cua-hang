@@ -201,9 +201,15 @@ h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
 .stat { background: var(--card); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; }
 .stat .muted { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat strong { font-size: 22px; }
+.stat-btn { text-align: left; color: inherit; border: 2px solid transparent; }
+.stat-btn.on { border-color: var(--blue); }
+.stat-btn.on .stat-shift { color: var(--blue); }
+.stat-shift { font-size: 15px; font-weight: 700; white-space: nowrap; }
+.stat-btn { padding-left: 10px; padding-right: 6px; }
 .report-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 16px; text-align: left; }
 .report-head strong { font-size: 18px; }
 .report-detail { padding: 0 16px 12px; display: grid; gap: 8px; }
+.report-delete { display: inline-flex; align-items: center; gap: 4px; justify-self: end; font-size: 14px; }
 .detail-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 15px; }
 .detail-row .photos { grid-column: 1 / -1; }
 .big { padding: 12px 16px; }
@@ -365,12 +371,12 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .legend-dot:first-child { margin-left: 0; }
 .legend-dot.ok { background: var(--ok); }
 .legend-dot.warn { background: var(--warn); }
-.shift-empty { color: var(--warn); text-transform: none; font-weight: 600; }
+.shift-title { font-size: 17px; font-weight: 700; color: var(--text); text-transform: none; }
+.shift-empty { color: var(--warn); font-size: 13px; text-transform: none; font-weight: 600; }
 .progress-pill { flex: none; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
 .progress-pill.ok { background: #1f7a3a; }
 .progress-pill.warn { background: #b85300; }
 .report.counted { box-shadow: inset 4px 0 0 var(--ok); }
-.tick { color: var(--ok); font-weight: 800; font-size: 15px; line-height: 1; }
 .missing { padding: 10px 16px 12px; box-shadow: inset 4px 0 0 var(--warn); border-top: 0.5px solid var(--sep); }
 .missing-title { color: var(--warn); font-weight: 700; font-size: 14px; margin-bottom: 8px; }
 .missing-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }

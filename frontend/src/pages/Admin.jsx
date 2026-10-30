@@ -38,7 +38,7 @@ export default function Admin({ onBack }) {
             <Segmented options={[{ value: 'list', label: 'Báo cáo đếm' }, { value: 'compare', label: 'So sánh tồn' }]}
               value={reportView} onChange={setReportView} />
           </div>
-          {reportView === 'list' ? <Reports fail={fail} /> : <Comparison ask={ask} fail={fail} />}
+          {reportView === 'list' ? <Reports ask={ask} fail={fail} /> : <Comparison ask={ask} fail={fail} />}
         </>
       )}
       {tab === 'staff' && <Staff ask={ask} fail={fail} />}
@@ -56,20 +56,40 @@ export default function Admin({ onBack }) {
 }
 
 /* ---------------- Reports ---------------- */
-function Reports({ fail }) {
+function Reports({ ask, fail }) {
   const [from, setFrom] = useState(today); // default: today only
   const [to, setTo] = useState(today());
   const [storeId, setStoreId] = useState('');
   const [stores, setStores] = useState([]);
   const [list, setList] = useState(null);
   const [open, setOpen] = useState(null);
+  const [openShift, setOpenShift] = useState({}); // { [date]: shift whose counters are listed }
 
   useEffect(() => { api.get('/stores').then(setStores).catch(fail); }, []);
-  useEffect(() => {
-    setList(null);
+  const load = useCallback(() => {
     const q = new URLSearchParams({ from, to, ...(storeId && { storeId }) });
-    api.get(`/admin/reports?${q}`).then(setList).catch(fail);
+    return api.get(`/admin/reports?${q}`).then(setList).catch(fail);
   }, [from, to, storeId]);
+  useEffect(() => { setList(null); load(); }, [load]);
+
+  // Delete one small counter's report, or every counter submitted together with it.
+  const remove = (r) => {
+    const others = r.submissionId ? list.filter((x) => x.submissionId === r.submissionId).length - 1 : 0;
+    const del = (path) => async () => {
+      try { await api.del(path); setOpen(null); await load(); } catch (e) { fail(e); }
+    };
+    ask({
+      title: 'Xóa báo cáo?',
+      message: `${r.bigCounterName} › ${r.smallCounterName}
+${r.userName} · ${shiftLabel(r.shift)} · ${fmtDate(r.date)} ${r.time}
+Đã xóa thì không khôi phục được.`,
+      actions: [
+        { label: 'Hủy' },
+        { label: others ? 'Chỉ xóa quầy này' : 'Xóa', style: 'danger', onClick: del(`/admin/reports/${r.id}`) },
+        ...(others ? [{ label: `Xóa cả lần nộp (${others + 1} quầy)`, style: 'danger', onClick: del(`/admin/reports/submissions/${r.submissionId}`) }] : []),
+      ],
+    });
+  };
 
   const days = useMemo(() => {
     const byDay = {};
@@ -116,8 +136,7 @@ function Reports({ fail }) {
     }
     return list.filter((g) => g.reports.length || g.counterCount);
   };
-  // Ca 1 and Ca 2 are always listed (an empty one is a missing count); Giao ca 1-2 only when it has reports.
-  const shiftsToShow = (d) => SHIFTS.filter(({ value }) => value !== 3 || d.shifts[3].length);
+  const toggleShift = (date, s) => setOpenShift((o) => ({ ...o, [date]: o[date] === s ? null : s }));
 
   return (
     <>
@@ -149,12 +168,15 @@ function Reports({ fail }) {
           </div>
           <div className="stats">
             {SHIFTS.map(({ value: s }) => (
-              <div key={s} className="stat"><span className="muted">{shiftLabel(s)}</span><strong>{fmt(sum(d.shifts[s]))}</strong></div>
+              <button key={s} className={`stat stat-btn ${openShift[d.date] === s ? 'on' : ''}`}
+                aria-expanded={openShift[d.date] === s} onClick={() => toggleShift(d.date, s)}>
+                <span className="stat-shift">{shiftLabel(s)}</span><strong>{fmt(sum(d.shifts[s]))}</strong>
+              </button>
             ))}
           </div>
-          {shiftsToShow(d).map(({ value: s }) => (
+          {SHIFTS.filter(({ value }) => value === openShift[d.date]).map(({ value: s }) => (
             <div className="group" key={s}>
-              <div className="group-title">
+              <div className="group-title shift-title">
                 {shiftLabel(s)}
                 {!d.shifts[s].length && <span className="shift-empty"> · chưa có báo cáo</span>}
               </div>
@@ -175,9 +197,9 @@ function Reports({ fail }) {
                   <button className="report-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
                     <div className="report-title">
                       <div className="report-counter">
-                        <span className="tick" aria-label="Đã đếm">✓</span>
                         <CounterBadge color={colorOf(r.bigCounterId)}>{r.bigCounterName}</CounterBadge>
                         <b>{r.smallCounterName}</b>
+                        <span className="progress-pill ok">Đã đếm</span>
                       </div>
                       <div className="muted small">{r.userName}{r.partnerName ? ` + ${r.partnerName}` : ''} · {r.time}{r.editCount > 0 && <span className="edited"> · đã sửa</span>}</div>
                     </div>
@@ -195,6 +217,9 @@ function Reports({ fail }) {
                           </div>
                         </div>
                       ))}
+                      <button className="btn link danger-text report-delete" onClick={() => remove(r)}>
+                        <TrashIcon size={16} /> Xóa báo cáo
+                      </button>
                     </div>
                   )}
                 </div>

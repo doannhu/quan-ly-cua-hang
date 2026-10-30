@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { adminOrAiKey, requireAuth } from '../middleware/auth.js';
+import { adminOrAiKey, requireAuth, requireRole } from '../middleware/auth.js';
 
 // A row (mục) of a small counter: its label ("Mâm 1", "Trong tủ 2", "Lí do khác"; older reports: a position number),
 // note (the typed reason for "Lí do khác"), count (0 when nothing there) and photos.
@@ -219,6 +219,20 @@ export default function reportRoutes({ reports, stores, counters, users }) {
   r.get('/admin/reports/:id', adminOrAiKey, async (req, res) => {
     const x = await reports.get(req.params.id);
     x ? res.json(normalizeReport(x)) : res.status(404).json({ error: 'Không tìm thấy' });
+  });
+
+  // ---- admin only: delete a submitted report (AI keys stay read-only) ----
+  // Permanent. Removes one small counter's report, or a whole submission (all its counters).
+  r.delete('/admin/reports/submissions/:submissionId', requireAuth, requireRole('admin'), async (req, res) => {
+    const list = await reports.find({ submissionId: req.params.submissionId });
+    if (!list.length) return res.status(404).json({ error: 'Không tìm thấy báo cáo' });
+    for (const x of list) await reports.remove(x.id);
+    res.status(204).end();
+  });
+  r.delete('/admin/reports/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    if (!(await reports.get(req.params.id))) return res.status(404).json({ error: 'Không tìm thấy báo cáo' });
+    await reports.remove(req.params.id);
+    res.status(204).end();
   });
 
   return r;
