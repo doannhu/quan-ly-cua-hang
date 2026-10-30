@@ -4,7 +4,7 @@ import { CameraIcon, CheckIcon } from '../components/icons.jsx';
 import { Picker, Row, SHIFTS, Segmented, fmt, shiftLabel, useDialog } from '../components/ui.jsx';
 
 let seq = 0;
-const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', positions: [] });
+const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', weight: '', positions: [] });
 const defaultShift = () => (new Date().getHours() < 14 ? 1 : 2);
 const HANDOVER = 3; // "Giao ca 1-2"
 const qtyOf = (p) => parseInt(p.qty, 10) || 0; // blank = 0
@@ -14,7 +14,9 @@ const sectionTotal = (s) => s.positions.reduce((sum, p) => sum + qtyOf(p), 0);
 //   cabinet rows "Trong tủ 1, 2…" (staff can add more) when the counter has them, the fixed items, and "Lí do khác"
 //   (typed reason) last. kind: 'cabinet' | 'item' | 'other' | 'extra' (a saved row no longer in the template).
 const LABELS = { other: 'Lí do khác', cabinet: 'Trong tủ' };
-const FALLBACK = { cabinet: true, items: [] };
+const FALLBACK = { cabinet: true, weight: false, items: [] };
+const WEIGHT = /^\d+([.,]\d{1,3})?$/; // staff may type 211,68 or 211.68
+const weightOf = (s) => Number(s.weight.replace(',', '.')) || 0; // blank = 0
 const lc = (s) => String(s).trim().toLocaleLowerCase('vi');
 const row = (kind, no, saved) => ({
   key: ++seq, kind, no, note: saved?.note || '',
@@ -56,6 +58,7 @@ const sectionsFrom = (editing) =>
     bigId: r.bigCounterId,
     smallId: r.smallCounterId,
     note: r.note || '',
+    weight: r.weight == null ? '' : String(r.weight),
     positions: [],
     saved: r.positions,
   }));
@@ -128,7 +131,14 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   const removePosition = (sk, pk) =>
     patchSection(sk, (s) => ({ ...s, positions: renumberCabinets(s.positions.filter((p) => p.key !== pk)) }));
   const pickSmall = (sk, smallId) =>
-    patchSection(sk, (s) => ({ ...s, smallId, positions: smallId ? buildRows(tplOf(smallId)) : [] }));
+    patchSection(sk, (s) => ({ ...s, smallId, weight: '', positions: smallId ? buildRows(tplOf(smallId)) : [] }));
+  // a big counter with a single small counter (e.g. Quầy nhẫn tròn) doesn't need the second pick
+  const pickBig = (sk, bigId) => {
+    const taken = new Set(sections.filter((x) => x.key !== sk).map((x) => x.smallId));
+    const free = (store?.bigCounters.find((b) => b.id === bigId)?.smallCounters || []).filter((c) => !taken.has(c.id));
+    const smallId = free.length === 1 ? free[0].id : '';
+    patchSection(sk, (s) => ({ ...s, bigId, smallId, weight: '', positions: smallId ? buildRows(tplOf(smallId)) : [] }));
+  };
   const removeSection = (sk) => setSections((ss) => ss.filter((s) => s.key !== sk));
 
   const addPhotos = (files) => {
@@ -157,6 +167,10 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
       if (s.positions.some((p) => p.qty && !/^\d+$/.test(p.qty))) return `${label}: số lượng không hợp lệ`;
       if (s.positions.some((p) => p.kind === 'other' && qtyOf(p) > 0 && !p.note.trim()))
         return `${label}: vui lòng nhập lí do khác`;
+      if (tplOf(s.smallId).weight) {
+        if (sectionTotal(s) > 0 && !s.weight.trim()) return `${label}: vui lòng nhập tổng trọng lượng`;
+        if (s.weight.trim() && !WEIGHT.test(s.weight.trim())) return `${label}: tổng trọng lượng không hợp lệ (tối đa 3 số lẻ)`;
+      }
     }
     const ids = sections.map((s) => s.smallId);
     if (new Set(ids).size !== ids.length) return 'Mỗi quầy nhỏ chỉ được chọn một lần';
@@ -175,6 +189,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
             bigCounterId: s.bigId,
             smallCounterId: s.smallId,
             note: s.note.trim(),
+            weight: tplOf(s.smallId).weight ? weightOf(s) : null,
             positions: await Promise.all(
               s.positions.map(async (p) => ({
                 no: p.no.trim(),
@@ -203,7 +218,8 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
 
   const confirm = () => {
     if (problem) return ask(info('Chưa đủ thông tin', problem));
-    const lines = sections.map((s) => `• ${bigOf(s).name} › ${smallOf(s).name}: ${fmt(sectionTotal(s))}`).join('\n');
+    const lines = sections.map((s) =>
+      `• ${bigOf(s).name} › ${smallOf(s).name}: ${fmt(sectionTotal(s))}${tplOf(s.smallId).weight ? ` · TL ${fmt(weightOf(s))}` : ''}`).join('\n');
     ask({
       title: editing ? 'Nộp lại số' : 'Nộp số',
       message: `${store.name} · ${shiftLabel(shift)}${
@@ -232,7 +248,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
           {done.reports.map((r) => (
             <div key={r.id} className="row">
               <span className="row-label">{r.bigCounterName} › {r.smallCounterName}</span>
-              <b>{fmt(r.total)}</b>
+              <b>{fmt(r.total)}{r.weight != null && ` · TL ${fmt(r.weight)}`}</b>
             </div>
           ))}
           <div className="row"><b>Tổng</b><b>{fmt(done.total)}</b></div>
@@ -299,7 +315,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
             </div>
             <div className="group">
               <Picker label="Quầy lớn" value={s.bigId} disabled={!store}
-                onChange={(v) => patchSection(s.key, (x) => ({ ...x, bigId: v, smallId: '', positions: [] }))}
+                onChange={(v) => pickBig(s.key, v)}
                 options={(store?.bigCounters || []).map((x) => ({ value: x.id, label: x.name }))} />
               <Picker label="Quầy nhỏ" value={s.smallId} disabled={!big || !templates}
                 onChange={(v) => pickSmall(s.key, v)}
@@ -360,6 +376,13 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
                 <span>Tổng {small ? small.name : `quầy ${i + 1}`}</span>
                 <strong>{fmt(sectionTotal(s))}</strong>
               </div>
+              {tplOf(s.smallId).weight && (
+                <div className="row weight-row">
+                  <span>Tổng trọng lượng (TL)</span>
+                  <input inputMode="decimal" placeholder="0" aria-label="Tổng trọng lượng" maxLength={12} value={s.weight}
+                    onChange={(e) => patchSection(s.key, (x) => ({ ...x, weight: e.target.value.replace(/[^\d.,]/g, '') }))} />
+                </div>
+              )}
               <div className="counter-note">
                 <textarea rows={2} maxLength={300} value={s.note}
                   placeholder={`Chú thích cho ${small ? small.name : `quầy ${i + 1}`} (không bắt buộc)`}

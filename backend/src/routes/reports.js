@@ -17,6 +17,8 @@ const sectionInput = z.object({
   smallCounterId: z.string(),
   // Optional free-text note for the whole small counter (quầy nhỏ).
   note: z.string().trim().max(300).default(''),
+  // Total weight (TL) staff enter for counters with "trong_luong" in the config; null for the others.
+  weight: z.number().min(0).max(10_000_000).nullish(),
   positions: z.array(positionInput).min(1).max(200),
 });
 const reportInput = z.object({
@@ -47,6 +49,7 @@ export function normalizeReport(r) {
   return {
     ...rest,
     note: r.note ?? '',
+    weight: r.weight ?? null,
     positions: r.positions ?? (trays || []).map((t) => ({ note: '', ...t })),
   };
 }
@@ -86,7 +89,7 @@ export default function reportRoutes({ reports, stores, counters, users }) {
       const [big, small] = await Promise.all([counters.get(s.bigCounterId), counters.get(s.smallCounterId)]);
       if (!big || !small || big.storeId !== store.id || big.parentId || small.parentId !== big.id)
         return { error: 'Quầy lớn / quầy nhỏ không hợp lệ' };
-      resolved.push({ big, small, note: s.note, positions: s.positions });
+      resolved.push({ big, small, note: s.note, weight: s.weight ?? null, positions: s.positions });
     }
     return { d, store, resolved, partner };
   }
@@ -94,7 +97,7 @@ export default function reportRoutes({ reports, stores, counters, users }) {
   // Save one report per small counter, all sharing submissionId.
   async function saveSubmission({ d, store, resolved, partner }, base) {
     const saved = [];
-    for (const { big, small, note, positions } of resolved) {
+    for (const { big, small, note, weight, positions } of resolved) {
       saved.push(
         await reports.insert({
           ...base,
@@ -105,6 +108,7 @@ export default function reportRoutes({ reports, stores, counters, users }) {
           bigCounterId: big.id, bigCounterName: big.name,
           smallCounterId: small.id, smallCounterName: small.name,
           note,
+          weight,
           positions,
           total: positions.reduce((sum, p) => sum + p.quantity, 0),
         }),

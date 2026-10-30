@@ -32,7 +32,7 @@ export function loadTemplates(path = config.positionTemplatesPath) {
     const seen = new Set([key(OTHER_ITEM)]);
     return out.map(sentenceCase).filter((x) => x && !seen.has(key(x)) && seen.add(key(x)) && !/^trong tu( \d+)?$/.test(key(x)));
   };
-  const template = (t) => ({ cabinet: !!t.trong_tu, items: items(t.muc) });
+  const template = (t) => ({ cabinet: !!t.trong_tu, weight: !!t.trong_luong, items: items(t.muc) });
   return {
     rules: (raw.quy_tac || []).map((t) => ({
       big: key(t.quay_lon), smalls: t.quay_nho?.length ? t.quay_nho.map(key) : null, ...template(t),
@@ -41,16 +41,16 @@ export function loadTemplates(path = config.positionTemplatesPath) {
   };
 }
 
-// The template of one small counter: { cabinet: bool, items: [..] }
+// The template of one small counter: { cabinet: bool, weight: bool (staff enter the total TL), items: [..] }
 export function templateFor(tpl, bigName, smallName) {
   const r = tpl.rules.find((x) => x.big === key(bigName) && (!x.smalls || x.smalls.includes(key(smallName))));
-  return r ? { cabinet: r.cabinet, items: r.items } : tpl.fallback;
+  return r ? { cabinet: r.cabinet, weight: r.weight, items: r.items } : tpl.fallback;
 }
 
 export default function templateRoutes({ counters }) {
   const r = Router();
 
-  // GET /api/position-templates?storeId= -> { other, cabinet, counters: { [smallCounterId]: { cabinet, items } } }
+  // GET /api/position-templates?storeId= -> { other, cabinet, counters: { [smallCounterId]: { cabinet, weight, items } } }
   r.get('/position-templates', requireAuth, async (req, res) => {
     let tpl;
     try {

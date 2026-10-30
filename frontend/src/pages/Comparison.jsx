@@ -13,6 +13,8 @@ const defaultShift = () => (new Date().getHours() < 14 ? 1 : 2);
 const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
 const diffClass = (d) => (d === 0 ? 'd-ok' : d < 0 ? 'd-short' : 'd-over');
 const statusOf = (d) => (d === 0 ? 'ok' : d < 0 ? 'short' : 'over');
+// a row is off when its quantity or its TL differs; it is coloured by the quantity first
+const rowStatus = (r) => statusOf(r.diff || r.weight?.diff || 0);
 const diffWord = (d) => (d === 0 ? 'khớp' : d < 0 ? 'thiếu' : 'dư');
 // "03:40, 26/10"
 const stamp = (iso) => {
@@ -191,11 +193,11 @@ export default function Comparison({ ask, fail }) {
 
   // PMV lines someone counted (largest difference first) vs lines nobody counted yet
   const counted = data ? data.rows.filter((r) => r.counted && inScope(r)).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)) : [];
-  const shown = filter === 'all' ? counted : counted.filter((r) => statusOf(r.diff) === filter);
+  const shown = filter === 'all' ? counted : counted.filter((r) => rowStatus(r) === filter);
   // per status: number of PMV lines and their summed difference (for the filter chips)
   const byStatus = { short: { n: 0, diff: 0 }, over: { n: 0, diff: 0 }, ok: { n: 0, diff: 0 } };
   for (const r of counted) {
-    const b = byStatus[statusOf(r.diff)];
+    const b = byStatus[rowStatus(r)];
     b.n += 1;
     b.diff += r.diff;
   }
@@ -382,7 +384,7 @@ export default function Comparison({ ask, fail }) {
               )}
               <div className="group cmp-list">
                 {shown.map((r) => (
-                  <div key={r.pmvName} className={`cmp-item s-${statusOf(r.diff)}`}>
+                  <div key={r.pmvName} className={`cmp-item s-${rowStatus(r)}`}>
                     <div className="cmp-main">
                       <b className="cmp-pmv">{r.pmvName}</b>
                       <span className="cmp-chips">{counterChips(r.counters)}</span>
@@ -396,6 +398,21 @@ export default function Comparison({ ask, fail }) {
                       </span>
                       <span className="cmp-nums"><b>{fmt(r.actual)}</b> / {fmt(r.system)}</span>
                     </div>
+                    {r.weight && (
+                      <div className="cmp-weight">
+                        <span>Trọng lượng (TL)</span>
+                        {r.weight.diff == null ? (
+                          <span className="muted small">Thực tế {fmt(r.weight.actual)} · tải lại file BC008 để so TL «{data.systemSource}»</span>
+                        ) : (
+                          <>
+                            <span className={`diff-pill p-${statusOf(r.weight.diff)}`}>
+                              {signed(r.weight.diff)} <span className="cmp-diff-word">{diffWord(r.weight.diff)}</span>
+                            </span>
+                            <span className="cmp-nums"><b>{fmt(r.weight.actual)}</b> / {fmt(r.weight.system)}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                     {/* counted vs system: the longer one fills the track */}
                     <div className="cmp-bar" title={`Thực tế ${fmt(r.actual)} / Hệ thống ${fmt(r.system)}`}>
                       <span className="bar-sys" style={{ width: `${(r.system / Math.max(r.actual, r.system, 1)) * 100}%` }} />

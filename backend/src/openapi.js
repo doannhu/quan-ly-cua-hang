@@ -11,7 +11,7 @@ const reportShape =
   'Each report is one small counter (quầy nhỏ) counted in one submission: ' +
   '{id, submissionId, date, time, shift, userName, partnerName (who counted together at a shift-3 handover, else null), ' +
   'storeId, storeName, bigCounterId, bigCounterName, ' +
-  'smallCounterId, smallCounterName, note, total, positions: [{no, note, quantity, photos[]}]}. ' +
+  'smallCounterId, smallCounterName, note, total, weight (total TL entered by staff, or null), positions: [{no, note, quantity, photos[]}]}. ' +
   'The report-level note is a free-text comment for the whole small counter. positions[] are the rows (mục) of the ' +
   'small counter from config/position-templates.json: no is the row label (e.g. "Mâm 1", "Trong tủ 2", "Khách cọc", ' +
   '"Lí do khác"; older reports: a position number) and quantity may be 0; positions[].note is the typed reason of ' +

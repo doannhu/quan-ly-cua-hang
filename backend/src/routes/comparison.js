@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { adminOrAiKey, requireAuth, requireRole } from '../middleware/auth.js';
 import { config } from '../config.js';
 import { isSilver, nameCode, numbersIn, parseBC008, suggestPmvNames } from '../pmv.js';
+import { loadTemplates, templateFor } from './templates.js';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SHIFT_NAME = { 1: 'Ca 1', 2: 'Ca 2', 3: 'Giao ca 1-2' };
 const SHIFT_CODE = { 1: 'Ca1', 2: 'Ca2', 3: 'GiaoCa1-2' };
+const round3 = (n) => Math.round(n * 1000) / 1000; // TL has at most 3 decimals; avoids float noise
 const dmy = (iso) => `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`; // 27-10-2026
 const dmySlash = (iso) => dmy(iso).replaceAll('-', '/'); // 27/10/2026
 // now in the shop's timezone: { date: 'YYYY-MM-DD', hh, mm }
@@ -123,7 +125,9 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const storeName = (await stores.get(storeId))?.name || '';
     // Which BC008 column is the system stock for this shift: Ca 1 is counted at the start of the day, so it is
     // compared with "Đầu ngày"; Ca 2 and Giao ca 1-2 are compared with "Còn lại".
-    const source = shift === 1 ? { field: 'openingQty', label: 'Đầu ngày' } : { field: 'qty', label: 'Còn lại' };
+    const source = shift === 1
+      ? { field: 'openingQty', weightField: 'openingWeight', label: 'Đầu ngày' }
+      : { field: 'qty', weightField: 'weight', label: 'Còn lại' };
     const [counterList, reportList] = await Promise.all([
       counters.find({ storeId }),
       reports.find({ storeId, date, shift }),
@@ -131,7 +135,16 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
 
     // counted quantity per small counter (all submissions of that shift)
     const counted = new Map();
-    for (const x of reportList) counted.set(x.smallCounterId, (counted.get(x.smallCounterId) || 0) + x.total);
+    const countedWeight = new Map(); // same, for the total weight (TL) staff enter on some counters
+    for (const x of reportList) {
+      counted.set(x.smallCounterId, (counted.get(x.smallCounterId) || 0) + x.total);
+      countedWeight.set(x.smallCounterId, (countedWeight.get(x.smallCounterId) || 0) + (x.weight || 0));
+    }
+    // counters whose TL is compared too ("trong_luong" in the config); a broken config only skips the TL check
+    let templates = null;
+    try {
+      templates = loadTemplates();
+    } catch { /* reported by GET /position-templates */ }
 
     // Silver products in a store without silver counters (e.g. Bạc món lines in the gold store's BC008) are not
     // part of that store's count, so they are left out of the comparison.
@@ -142,8 +155,11 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     // PMV lines grouped by quầy nhỏ (one quầy nhỏ may have several gold codes)
     const pmv = new Map();
     for (const it of items) {
-      const g = pmv.get(it.smallName) || { pmvName: it.smallName, pmvBigName: it.bigName, goldCodes: [], system: 0 };
+      const g = pmv.get(it.smallName) || { pmvName: it.smallName, pmvBigName: it.bigName, goldCodes: [], system: 0, systemWeight: 0 };
       g.system += Number(it[source.field]) || 0;
+      // files uploaded before opening TL was read have no "Đầu ngày" TL: null = can't compare until re-uploaded
+      const w = it[source.weightField];
+      g.systemWeight = w == null || g.systemWeight == null ? null : g.systemWeight + w;
       if (it.goldCode && !g.goldCodes.includes(it.goldCode)) g.goldCodes.push(it.goldCode);
       pmv.set(it.smallName, g);
     }
@@ -176,6 +192,10 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         counterId: c.id, name: c.name, bigId: c.parentId, bigName: bigName.get(c.parentId) || '',
         actual: counted.get(c.id) || 0, counted: counted.has(c.id),
       };
+      if (templates && templateFor(templates, entry.bigName, c.name).weight) {
+        entry.weighed = true;
+        entry.actualWeight = countedWeight.get(c.id) || 0;
+      }
       const l = linksOf(c, entry.bigName);
       entry.pmvNames = l.names;
       entry.auto = l.auto; // suggested, not confirmed by admin
@@ -194,6 +214,13 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
       const info = names.map((n) => pmv.get(n)).filter(Boolean);
       const system = info.reduce((s, x) => s + x.system, 0);
       const actual = g.counters.reduce((s, c) => s + c.actual, 0);
+      // TL is compared like the quantity, for groups with a counter that records it
+      let weight = null;
+      if (g.counters.some((c) => c.weighed)) {
+        const sysW = info.some((x) => x.systemWeight == null) ? null : round3(info.reduce((s, x) => s + x.systemWeight, 0));
+        const actW = round3(g.counters.reduce((s, c) => s + (c.actualWeight || 0), 0));
+        weight = { actual: actW, system: sysW, diff: sysW == null ? null : round3(actW - sysW) };
+      }
       return {
         pmvName: names.join(' + '), // display label of the group
         pmvNames: names,
@@ -206,6 +233,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         missingInFile: !!snap && names.some((n) => !pmv.has(n)),
         counted: g.counters.some((c) => c.counted),
         diff: actual - system,
+        weight, // { actual, system, diff } or null; system/diff null when the file has no such TL
       };
     });
     list.sort((a, b) => a.pmvBigName.localeCompare(b.pmvBigName) || a.pmvName.localeCompare(b.pmvName));
@@ -263,7 +291,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         if (!row) return { ...base, result: 'chua_ghep' };
         const waiting = row.counters.filter((x) => !x.counted);
         if (waiting.length) return { ...base, result: 'cho', waitingFor: waiting.map((x) => `${x.bigName} › ${x.name}`) };
-        return { ...base, result: row.diff === 0 ? 'khop' : 'lech' };
+        return { ...base, result: row.diff === 0 && !row.weight?.diff ? 'khop' : 'lech' };
       });
     res.json({ status: 'ready', date: first.date, shift: first.shift, allOk: result.every((x) => x.result === 'khop'), counters: result });
   });

@@ -75,6 +75,7 @@ export function parseBC008(text) {
       smallName: clean(r[dataStart + 2]),
       goldCode: clean(r[dataStart + 3]),
       openingQty: num(at(r, 'Đầu ngày', 0)),
+      openingWeight: num(at(r, 'Đầu ngày', 1)),
       inQty: num(at(r, 'Nhập', 0)),
       retailQty: num(at(r, 'Bán lẻ', 0)),
       wholesaleQty: num(at(r, 'Bán sỉ', 0)),

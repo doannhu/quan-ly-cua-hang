@@ -186,6 +186,7 @@ function Reports({ fail }) {
                   {open === r.id && (
                     <div className="report-detail">
                       {r.note && <p className="counter-note-view">{r.note}</p>}
+                      {r.weight != null && <div className="detail-row"><span>Tổng trọng lượng (TL)</span><b>{fmt(r.weight)}</b></div>}
                       {r.positions.filter(shownRow).map((t, i) => (
                         <div key={i} className="detail-row">
                           <span>{/^\d+$/.test(t.no) ? `Vị trí ${t.no}` : t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>

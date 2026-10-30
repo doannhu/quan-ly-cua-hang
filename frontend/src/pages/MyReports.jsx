@@ -88,7 +88,7 @@ export default function MyReports({ onBack, onEdit }) {
                       {r.note && <span className="muted small sub-note">{r.note}</span>}
                     </span>
                     <span className="sub-line-right">
-                      <b>{fmt(r.total)}</b>
+                      <b>{fmt(r.total)}{r.weight != null && ` · TL ${fmt(r.weight)}`}</b>
                       {res && <span className={`res-chip chip-${res.result}`}>{RESULT_LABEL[res.result]}</span>}
                     </span>
                     {res?.result === 'cho' && (
