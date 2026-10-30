@@ -13,7 +13,7 @@ export function sentenceCase(s) {
   const t = String(s).replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi');
   return t.charAt(0).toLocaleUpperCase('vi') + t.slice(1);
 }
-const key = (s) =>
+export const key = (s) =>
   String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
 
 export function loadTemplates(path = config.positionTemplatesPath) {
@@ -35,7 +35,7 @@ export function loadTemplates(path = config.positionTemplatesPath) {
   const template = (t) => ({ cabinet: !!t.trong_tu, weight: !!t.trong_luong, items: items(t.muc) });
   return {
     rules: (raw.quy_tac || []).map((t) => ({
-      big: key(t.quay_lon), smalls: t.quay_nho?.length ? t.quay_nho.map(key) : null, ...template(t),
+      bigs: [].concat(t.quay_lon).map(key), smalls: t.quay_nho?.length ? t.quay_nho.map(key) : null, ...template(t),
     })),
     fallback: template(raw.mac_dinh || { trong_tu: true, muc: [] }),
   };
@@ -43,7 +43,7 @@ export function loadTemplates(path = config.positionTemplatesPath) {
 
 // The template of one small counter: { cabinet: bool, weight: bool (staff enter the total TL), items: [..] }
 export function templateFor(tpl, bigName, smallName) {
-  const r = tpl.rules.find((x) => x.big === key(bigName) && (!x.smalls || x.smalls.includes(key(smallName))));
+  const r = tpl.rules.find((x) => x.bigs.includes(key(bigName)) && (!x.smalls || x.smalls.includes(key(smallName))));
   return r ? { cabinet: r.cabinet, weight: r.weight, items: r.items } : tpl.fallback;
 }
 

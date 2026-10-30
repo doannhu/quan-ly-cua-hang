@@ -2,7 +2,7 @@
   "_huong_dan": [
     "Các mục (dòng) nhân viên điền số lượng trong 'Báo cáo hàng thực tế', theo từng quầy nhỏ.",
     "Sửa file này rồi tải lại trang là áp dụng, không cần khởi động lại server.",
-    "quy_tac: xét từ trên xuống, quy tắc đầu tiên khớp sẽ được dùng. quay_lon = tên quầy lớn trong app;",
+    "quy_tac: xét từ trên xuống, quy tắc đầu tiên khớp sẽ được dùng. quay_lon = tên quầy lớn trong app (một tên, hoặc danh sách nếu mỗi nơi đặt tên khác nhau);",
     "  quay_nho = danh sách tên quầy nhỏ (bỏ trống = mọi quầy nhỏ của quầy lớn đó). Không phân biệt hoa thường, dấu.",
     "trong_tu: true = có dòng 'Trong tủ 1' và nút thêm 'Trong tủ 2, 3...'.",
     "trong_luong: true = có ô nhập tổng trọng lượng; số này được so với cột TL vàng của BC008 giống như số lượng.",
@@ -90,7 +90,7 @@
     },
     {
       "ghi_chu": "Nhẫn 9999",
-      "quay_lon": "Quầy nhẫn tròn",
+      "quay_lon": ["Quầy nhẫn tròn", "Quầy nhẫn tròn 9999"],
       "trong_tu": true,
       "trong_luong": true,
       "muc": ["5 chỉ", "2 chỉ", "1 chỉ", "5 phân", "2 phân", "1 phân", "@chung_nhan"]
