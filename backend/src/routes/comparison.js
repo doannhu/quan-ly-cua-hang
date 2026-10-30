@@ -17,15 +17,24 @@ function nowLocal(at = new Date()) {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hh: p.hour, mm: p.minute };
 }
-// Standard name of an uploaded BC008: BC008_<store>_<dd-mm-yyyy of the stock>_<shift>_<HHhMM of the upload>
-const standardName = (storeName, date, shift, hh, mm) =>
-  `BC008_${nameCode(storeName)}_${dmy(date)}_${SHIFT_CODE[shift] || 'KhongRoCa'}_${hh}h${mm}`;
+// Standard name of an uploaded BC008: BC008_<store>_<dd-mm-yyyy it is used for>_<shift>_tai-<dd-mm-yyyy>_<HHhMM of the upload>
+const standardName = (storeName, date, shift, at) =>
+  `BC008_${nameCode(storeName)}_${dmy(date)}_${SHIFT_CODE[shift] || 'KhongRoCa'}_tai-${dmy(at.date)}_${at.hh}h${at.mm}`;
+const daysAfter = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 864e5);
+// Which BC008 column is the system stock: Ca 1 is counted at the start of the day, so it is compared with "Đầu ngày";
+// Ca 2 and Giao ca 1-2 with "Còn lại". A file uploaded ahead for Ca 1 of a later day (uploadedAhead, decided at upload)
+// only knows that day's opening stock as its "Còn lại".
+const sourceOf = (shift, uploadedAhead) =>
+  shift === 1 && !uploadedAhead
+    ? { field: 'openingQty', weightField: 'openingWeight', label: 'Đầu ngày' }
+    : { field: 'qty', weightField: 'weight', label: 'Còn lại' };
 // Public view of a stored snapshot (uploads from before shifts were recorded have no shift / standard name)
 function snapInfo(s, storeName) {
   const t = nowLocal(new Date(s.createdAt));
   return {
     id: s.id, date: s.date, shift: s.shift ?? null, shiftName: SHIFT_NAME[s.shift] || 'Không rõ ca',
-    name: s.name || standardName(storeName, s.date, s.shift, t.hh, t.mm),
+    name: s.name || standardName(storeName, s.date, s.shift, t),
+    fileDate: s.toDate || s.date, // the day the file's numbers are from; `date` is the day it is used for
     originalFileName: s.originalFileName || s.fileName || '',
     uploadedAt: s.createdAt, uploadedBy: s.uploadedBy, lines: s.items.length,
     pmvStoreName: s.pmvStoreName, pmvAddress: s.pmvAddress || '',
@@ -37,12 +46,13 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
   const r = Router();
   const adm = [requireAuth, requireRole('admin')];
 
-  // Upload a PMV BC008 CSV for one store and shift. Body: { storeId, shift, fileName, csv, dryRun? }.
+  // Upload a PMV BC008 CSV for one store, day and shift. Body: { storeId, date?, shift, fileName, csv, dryRun? }.
+  // date = the day the file is used for, may be ahead of today (default: "Đến ngày" in the file).
   // dryRun=true only parses and returns the standard name + warnings (nothing saved), so the admin can confirm.
-  // Saving replaces the file of the same store + date ("Đến ngày" in the file) + shift.
+  // Saving replaces the file of the same store + date + shift.
   r.post('/admin/system-stock', adm, async (req, res) => {
     const b = z.object({
-      storeId: z.string(), shift: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      storeId: z.string(), date: z.string().regex(DATE).optional(), shift: z.union([z.literal(1), z.literal(2), z.literal(3)]),
       fileName: z.string().max(200).default(''), csv: z.string().min(1), dryRun: z.boolean().default(false),
     }).safeParse(req.body);
     if (!b.success) return res.status(400).json({ error: 'Thiếu cửa hàng, ca hoặc nội dung file' });
@@ -55,9 +65,10 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
       return res.status(400).json({ error: e.message });
     }
     const { shift, fileName } = b.data;
-    const date = parsed.toDate;
+    const fileDate = parsed.toDate;
+    const date = b.data.date || fileDate;
     const now = nowLocal();
-    const name = standardName(store.name, date, shift, now.hh, now.mm);
+    const name = standardName(store.name, date, shift, now);
 
     const warnings = [];
     const fileNum = numbersIn(parsed.address)[0]; // house number in the file's address, e.g. 209
@@ -67,17 +78,26 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const m = /(\d{2})(\d{2})(\d{4})/.exec(fileName) || /(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})/.exec(fileName);
     if (m) {
       const fromName = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-      if (fromName !== date)
-        warnings.push(`Tên file ghi ngày ${dmySlash(fromName)} nhưng nội dung BC008 là ngày ${dmySlash(date)} — sẽ lưu theo ngày ${dmySlash(date)}.`);
+      if (fromName !== fileDate)
+        warnings.push(`Tên file ghi ngày ${dmySlash(fromName)} nhưng nội dung BC008 là ngày ${dmySlash(fileDate)}.`);
     }
-    if (parsed.fromDate && parsed.fromDate !== date)
-      warnings.push(`File gồm nhiều ngày (từ ${dmySlash(parsed.fromDate)} đến ${dmySlash(date)}).`);
-    if (date > now.date) warnings.push(`Ngày trong file (${dmySlash(date)}) ở tương lai.`);
+    if (parsed.fromDate && parsed.fromDate !== fileDate)
+      warnings.push(`File gồm nhiều ngày (từ ${dmySlash(parsed.fromDate)} đến ${dmySlash(fileDate)}).`);
+    if (fileDate > now.date) warnings.push(`Ngày trong file (${dmySlash(fileDate)}) ở tương lai.`);
+    const aheadDays = daysAfter(now.date, date); // how far the chosen day is after today
+    const uploadedAhead = aheadDays > 0;
+    const source = sourceOf(shift, uploadedAhead);
+    if (aheadDays >= 2)
+      warnings.push(`Ngày sử dụng ${dmySlash(date)} sau hôm nay ${aheadDays} ngày — kiểm tra lại ngày đã chọn.`);
+    else if (fileDate > date)
+      warnings.push(`Số liệu trong file là ngày ${dmySlash(fileDate)}, sau ngày sử dụng ${dmySlash(date)}.`);
+    else if (fileDate < date && !(shift === 1 && aheadDays === 1 && daysAfter(fileDate, date) === 1))
+      warnings.push(`Số liệu trong file là ngày ${dmySlash(fileDate)}, không phải ngày ${dmySlash(date)} — sẽ so với «${source.label}» của ngày ${dmySlash(fileDate)}.`);
     const existing = (await snapshots.find({ storeId: store.id, date })).filter((s) => (s.shift ?? null) === shift);
     if (existing.length) warnings.push(`Sẽ thay file đã tải trước đó: ${snapInfo(existing[0], store.name).name}.`);
 
     const summary = {
-      name, date, shift, shiftName: SHIFT_NAME[shift], storeName: store.name, pmvStoreName: parsed.storeName,
+      name, date, fileDate, shift, shiftName: SHIFT_NAME[shift], systemSource: source.label, storeName: store.name, pmvStoreName: parsed.storeName,
       pmvAddress: parsed.address, lines: parsed.items.length, totalQty: parsed.items.reduce((t, x) => t + x.qty, 0), warnings,
     };
     if (b.data.dryRun) return res.json({ dryRun: true, ...summary });
@@ -86,7 +106,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const snap = await snapshots.insert({
       storeId: store.id, date, shift, name, source: 'PMV BC008', originalFileName: fileName, fileName: name,
       pmvStoreName: parsed.storeName, pmvAddress: parsed.address, fromDate: parsed.fromDate, toDate: parsed.toDate,
-      uploadedBy: req.user.name, items: parsed.items,
+      uploadedAhead, uploadedBy: req.user.name, items: parsed.items,
     });
     res.status(201).json({ id: snap.id, ...summary, items: summary.lines });
   });
@@ -123,11 +143,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
     const sameDay = await snapshots.find({ storeId, date }, { sort: { createdAt: -1 } });
     const snap = sameDay.find((s) => s.shift === shift) || sameDay.find((s) => s.shift == null);
     const storeName = (await stores.get(storeId))?.name || '';
-    // Which BC008 column is the system stock for this shift: Ca 1 is counted at the start of the day, so it is
-    // compared with "Đầu ngày"; Ca 2 and Giao ca 1-2 are compared with "Còn lại".
-    const source = shift === 1
-      ? { field: 'openingQty', weightField: 'openingWeight', label: 'Đầu ngày' }
-      : { field: 'qty', weightField: 'weight', label: 'Còn lại' };
+    const source = sourceOf(shift, snap?.uploadedAhead);
     const [counterList, reportList] = await Promise.all([
       counters.find({ storeId }),
       reports.find({ storeId, date, shift }),
@@ -245,7 +261,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
 
     return {
       storeId, date, shift,
-      systemSource: source.label, // BC008 column used as system stock: "Đầu ngày" (Ca 1) or "Còn lại" (Ca 2, Giao ca 1-2)
+      systemSource: source.label, // BC008 column used as system stock, see sourceOf
       snapshot: snap ? (({ name, ...info }) => ({ ...info, name, fileName: name }))(snapInfo(snap, storeName)) : null,
       rows: list,
       unmatched,

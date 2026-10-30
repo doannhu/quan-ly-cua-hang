@@ -69,20 +69,19 @@ export default function Comparison({ ask, fail }) {
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
   // Upload: the server first checks the file (standard name + warnings), the admin confirms, then it is saved
-  // for the shift selected in "Ca đếm".
+  // for the day and shift selected above (the day may be ahead of today).
   const upload = async (file) => {
     if (!file) return;
     setBusy(true);
     try {
-      const body = { storeId, shift, fileName: file.name, csv: await file.text() };
+      const body = { storeId, date, shift, fileName: file.name, csv: await file.text() };
       const pre = await api.post('/admin/system-stock', { ...body, dryRun: true });
       const save = async () => {
         setBusy(true);
         try {
-          const res = await api.post('/admin/system-stock', body);
+          await api.post('/admin/system-stock', body);
           loadFiles();
-          if (res.date !== date) setDate(res.date); // jump to the file's date
-          else load();
+          load();
         } catch (e) {
           fail(e);
         } finally {
@@ -94,7 +93,8 @@ export default function Comparison({ ask, fail }) {
         message: [
           `Tên lưu: ${pre.name}`,
           `File gốc: ${file.name}`,
-          `Ngày tồn: ${fmtDate(pre.date)} · ${pre.shiftName}`,
+          `Dùng cho: ${fmtDate(pre.date)} · ${pre.shiftName}`,
+          `Số liệu trong file: ngày ${fmtDate(pre.fileDate)} · so với «${pre.systemSource}»`,
           `PMV: ${pre.pmvStoreName}${pre.pmvAddress ? ` — ${pre.pmvAddress}` : ''}`,
           `${pre.lines} dòng · ${fmt(pre.totalQty)} món`,
           ...(pre.warnings.length ? ['', ...pre.warnings.map((w) => `⚠️ ${w}`)] : []),
@@ -113,7 +113,7 @@ export default function Comparison({ ask, fail }) {
 
   const removeFile = (f) => ask({
     title: 'Xóa file BC008?',
-    message: `${f.name}\nNgày tồn ${fmtDate(f.date)} · ${f.shiftName}`,
+    message: `${f.name}\nDùng cho ${fmtDate(f.date)} · ${f.shiftName}`,
     actions: [
       { label: 'Hủy' },
       { label: 'Xóa', style: 'danger', onClick: async () => {
@@ -271,7 +271,7 @@ export default function Comparison({ ask, fail }) {
         </div>
         <button className="add-row upload-row" disabled={!storeId || busy} onClick={() => fileInput.current.click()}>
           <span className="icon-tile tile-blue"><UploadIcon size={18} /></span>
-          {busy ? 'Đang tải…' : `${data?.snapshot?.shift === shift ? 'Tải lại' : 'Tải'} file BC008 (.csv) cho ${shiftLabel(shift)}`}
+          {busy ? 'Đang tải…' : `${data?.snapshot?.shift === shift ? 'Tải lại' : 'Tải'} file BC008 (.csv) cho ${shiftLabel(shift)} · ${fmtDate(date)}`}
         </button>
         <input ref={fileInput} type="file" accept=".csv,text/csv" hidden
           onChange={(e) => { upload(e.target.files[0]); e.target.value = ''; }} />
@@ -290,7 +290,7 @@ export default function Comparison({ ask, fail }) {
                 <span className="file-info">
                   <span className="file-name">{f.name}</span>
                   <span className="muted small">
-                    Tồn {fmtDate(f.date)} · {f.shiftName} · {f.lines} dòng · tải {stamp(f.uploadedAt)}{f.uploadedBy ? ` · ${f.uploadedBy}` : ''}
+                    Dùng cho {fmtDate(f.date)} · {f.shiftName} · {f.lines} dòng · tải {stamp(f.uploadedAt)}{f.uploadedBy ? ` · ${f.uploadedBy}` : ''}
                   </span>
                   {f.originalFileName && f.originalFileName !== f.name && <span className="muted small">File gốc: {f.originalFileName}</span>}
                 </span>
@@ -336,7 +336,9 @@ export default function Comparison({ ask, fail }) {
           </div>
           <p className="muted small scope-help">
             {data.snapshot
-              ? 'Số bên cạnh: quầy PMV đã đếm / đã ghép. Ca 1 so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».'
+              ? `Số bên cạnh: quầy PMV đã đếm / đã ghép. ${shift === 1 && data.systemSource === 'Còn lại'
+                  ? `File được tải trước cho ngày ${fmtDate(date)}, Ca 1 so với «Còn lại» của file.`
+                  : 'Ca 1 so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».'}`
               : `Tải file BC008 ngày ${fmtDate(date)} ở trên để bật các nút so sánh. Ca 1 sẽ so với «Đầu ngày», Ca 2 và Giao ca 1-2 so với «Còn lại».`}
           </p>
         </div>

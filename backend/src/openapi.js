@@ -40,7 +40,7 @@ export const openapi = {
     },
     '/api/admin/comparison': {
       get: {
-        summary: 'Counted stock vs system stock (PMV BC008) per PMV small counter for one store/day/shift. System stock = BC008 "Đầu ngày" for shift 1, "Còn lại" for shifts 2 and 3 (see systemSource).',
+        summary: 'Counted stock vs system stock (PMV BC008) per PMV small counter for one store/day/shift. System stock = BC008 "Đầu ngày" for shift 1 ("Còn lại" when the file was uploaded ahead of that day), "Còn lại" for shifts 2 and 3 (see systemSource).',
         security: auth,
         parameters: [
           { name: 'storeId', in: 'query', required: true, schema: { type: 'string' } },
@@ -51,7 +51,7 @@ export const openapi = {
       },
     },
     '/api/admin/system-stock': {
-      get: { summary: 'Days with uploaded PMV system stock for a store', security: auth, parameters: [{ name: 'storeId', in: 'query', required: true, schema: { type: 'string' } }], responses: { 200: { description: '[{id, date, fileName, uploadedAt, uploadedBy, lines}]' } } },
+      get: { summary: 'Days with uploaded PMV system stock for a store', security: auth, parameters: [{ name: 'storeId', in: 'query', required: true, schema: { type: 'string' } }], responses: { 200: { description: '[{id, date (day the file is used for), fileDate (day of its numbers), shift, name, uploadedAt, uploadedBy, lines}]' } } },
     },
     '/api/admin/reports/by-counter': {
       get: { summary: 'Total goods per day / shift / small counter (quầy nhỏ)', security: auth, parameters: filters, responses: { 200: { description: '{ rows: [{date, shift, storeId, storeName, bigCounterId, bigCounterName, smallCounterId, smallCounterName, total, reportCount}], grandTotal }' } } },
