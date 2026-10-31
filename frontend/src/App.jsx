@@ -32,11 +32,12 @@ export default function App() {
   const isAdmin = auth.user.role === 'admin';
   const home = () => setView('home');
   const mine = () => setView('mine');
+  const edit = (s) => { setEditing(s); setView('edit'); };
 
   if (view === 'admin' && isAdmin) return <Admin onBack={home} />;
-  if (view === 'report') return <StaffReport user={auth.user} onBack={home} onOpenMine={mine} />;
+  if (view === 'report') return <StaffReport user={auth.user} onBack={home} onOpenMine={mine} onEdit={edit} />;
   if (view === 'mine')
-    return <MyReports onBack={home} onEdit={(s) => { setEditing(s); setView('edit'); }} />;
+    return <MyReports onBack={home} onEdit={edit} />;
   if (view === 'edit' && editing)
     return <StaffReport key={editing.submissionId} user={auth.user} editing={editing} onBack={mine} />;
   return (

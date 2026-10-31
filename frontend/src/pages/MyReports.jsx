@@ -4,7 +4,7 @@ import { PencilIcon } from '../components/icons.jsx';
 import { fmt, fmtDate, shiftLabel } from '../components/ui.jsx';
 
 // Group the user's per-counter reports back into submissions (one card per "Nộp thông tin").
-function groupSubmissions(reports) {
+export function groupSubmissions(reports) {
   const map = new Map();
   for (const r of reports) {
     const key = r.submissionId || r.id; // reports from before submissions existed stand alone

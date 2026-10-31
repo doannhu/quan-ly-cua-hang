@@ -290,6 +290,8 @@ h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; margin: 0; }
 
 /* staff: submitted reports today + edit mode */
 .edit-hint { margin: 4px 4px 0; font-size: 15px; }
+.submitted-box { padding: 14px 16px; border-left: 4px solid var(--warn); }
+.submitted-box p { margin: 4px 0 12px; }
 .tag { font-size: 13px; color: var(--blue); background: var(--fill); border-radius: 10px; padding: 3px 9px; }
 .sub-card { display: block; width: 100%; text-align: left; padding: 0; }
 .sub-card:active:not(:disabled) { background: var(--fill); }

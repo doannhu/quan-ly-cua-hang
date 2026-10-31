@@ -30,6 +30,7 @@ const reportInput = z.object({
   sections: z.array(sectionInput).min(1).max(50),
 });
 const HANDOVER = 3;
+const SHIFT_NAME = { 1: 'Ca 1', 2: 'Ca 2', 3: 'Giao ca 1-2' };
 
 // Current date/time in the configured timezone.
 function nowParts() {
@@ -126,13 +127,23 @@ export default function reportRoutes({ reports, stores, counters, users }) {
     };
   }
 
+  // Each user submits once per shift per day; after that they can only edit that submission.
+  // Returns the error message when `shift` already has another submission of theirs.
+  async function submittedError(userId, date, shift, exceptSubmissionId) {
+    const other = (await reports.find({ userId, date, shift })).find((x) => x.submissionId !== exceptSubmissionId);
+    return other && `Bạn đã nộp ${SHIFT_NAME[shift]} lúc ${other.time}. Mỗi ca chỉ nộp 1 lần trong ngày, vui lòng sửa bản đã nộp.`;
+  }
+
   // ---- staff (and admin) submit ----
   // One submission may cover several counters; each small counter is stored as its own report,
   // linked by submissionId, so totals per small counter fall out of the existing queries.
   r.post('/reports', requireAuth, async (req, res) => {
     const v = await validateSubmission(req.body, req.user.id);
     if (v.error) return res.status(400).json({ error: v.error });
-    const base = { submissionId: randomUUID(), userId: req.user.id, userName: req.user.name, ...nowParts() };
+    const at = nowParts();
+    const taken = await submittedError(req.user.id, at.date, v.d.shift);
+    if (taken) return res.status(409).json({ error: taken });
+    const base = { submissionId: randomUUID(), userId: req.user.id, userName: req.user.name, ...at };
     res.status(201).json(await saveSubmission(v, base));
   });
 
@@ -147,6 +158,8 @@ export default function reportRoutes({ reports, stores, counters, users }) {
 
     const v = await validateSubmission(req.body, first.userId);
     if (v.error) return res.status(400).json({ error: v.error });
+    const taken = await submittedError(first.userId, first.date, v.d.shift, first.submissionId);
+    if (taken) return res.status(409).json({ error: taken });
 
     for (const x of old) await reports.remove(x.id);
     const base = {

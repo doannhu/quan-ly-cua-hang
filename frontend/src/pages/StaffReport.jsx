@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, compressImage } from '../api.js';
 import { CameraIcon, CheckIcon } from '../components/icons.jsx';
 import { Picker, Row, SHIFTS, Segmented, fmt, shiftLabel, useDialog } from '../components/ui.jsx';
+import { groupSubmissions } from './MyReports.jsx';
 
 let seq = 0;
 const newSection = () => ({ key: ++seq, bigId: '', smallId: '', note: '', weight: '', positions: [] });
@@ -64,7 +65,7 @@ const sectionsFrom = (editing) =>
   }));
 
 // `editing` (optional): a submission from "Báo cáo đã nộp hôm nay" to edit and resubmit.
-export default function StaffReport({ user, onBack, editing, onOpenMine }) {
+export default function StaffReport({ user, onBack, editing, onOpenMine, onEdit }) {
   const [dialog, ask] = useDialog();
   const [catalog, setCatalog] = useState(null);
   const [storeId, setStoreId] = useState(() => editing?.storeId || localStorage.getItem('lastStore') || '');
@@ -80,12 +81,17 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   const [now, setNow] = useState(new Date());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [mine, setMine] = useState([]); // today's submissions of this user
+  // one submission per shift per day: a shift already submitted can only be edited
+  const submitted = editing ? null : mine.find((s) => s.shift === shift);
+  const loadMine = () => api.get('/reports/mine?date=today').then((r) => setMine(groupSubmissions(r.reports))).catch(() => {});
   const fileFor = useRef(null);
   const fileInput = useRef(null);
 
   useEffect(() => {
     api.get('/stores').then(setCatalog).catch((e) => ask(info('Lỗi', e.message)));
     api.get('/staff').then((list) => setStaff(list.filter((u) => u.id !== user.id))).catch(() => {});
+    if (!editing) loadMine();
     const t = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(t);
   }, []);
@@ -211,6 +217,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
       setDone(result);
     } catch (e) {
       ask(info('Không thể nộp', e.message));
+      if (!editing) loadMine();
     } finally {
       setBusy(false);
     }
@@ -232,6 +239,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
   const reset = () => {
     setDone(null);
     setSections([newSection()]);
+    loadMine();
   };
 
   if (done) {
@@ -257,7 +265,7 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
           <button className="btn primary block" onClick={onBack}>Xem báo cáo đã nộp</button>
         ) : (
           <>
-            <button className="btn primary block" onClick={reset}>Nhập báo cáo mới</button>
+            <button className="btn primary block" onClick={reset}>Nộp ca khác</button>
             <button className="btn link block" onClick={onOpenMine}>Xem báo cáo đã nộp hôm nay</button>
             <button className="btn link block" onClick={onBack}>Về trang chủ</button>
           </>
@@ -300,7 +308,18 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
           options={(catalog || []).map((s) => ({ value: s.id, label: s.name }))} />
       </div>
 
-      {sections.map((s, i) => {
+      {submitted && (
+        <div className="group submitted-box">
+          <b>Bạn đã nộp {shiftLabel(shift)} hôm nay</b>
+          <p className="muted small">
+            Nộp lúc {submitted.time} · {submitted.storeName}{submitted.editCount > 0 ? ` · đã sửa ${submitted.editCount} lần` : ''}.
+            {' '}Mỗi ca chỉ nộp 1 lần trong ngày, bạn chỉ có thể sửa bản đã nộp.
+          </p>
+          <button className="btn primary block" onClick={() => onEdit(submitted)}>Sửa bản đã nộp</button>
+        </div>
+      )}
+
+      {!submitted && sections.map((s, i) => {
         const big = bigOf(s);
         const small = smallOf(s);
         // A small counter already used in another section can't be picked again.
@@ -395,24 +414,28 @@ export default function StaffReport({ user, onBack, editing, onOpenMine }) {
         );
       })}
 
-      <div className="group spaced">
-        <button className="add-row" disabled={!store} onClick={() => setSections((ss) => [...ss, newSection()])}>
-          <span className="plus">+</span> Thêm quầy
-        </button>
-      </div>
+      {!submitted && (
+        <div className="group spaced">
+          <button className="add-row" disabled={!store} onClick={() => setSections((ss) => [...ss, newSection()])}>
+            <span className="plus">+</span> Thêm quầy
+          </button>
+        </div>
+      )}
 
       <input ref={fileInput} type="file" accept="image/*" multiple hidden
         onChange={(e) => { addPhotos(e.target.files); e.target.value = ''; }} />
 
-      <div className="total-bar">
-        <div>
-          <span className="muted">Tổng số hàng{sections.length > 1 ? ` · ${sections.length} quầy` : ''}</span>
-          <strong>{fmt(total)}</strong>
+      {!submitted && (
+        <div className="total-bar">
+          <div>
+            <span className="muted">Tổng số hàng{sections.length > 1 ? ` · ${sections.length} quầy` : ''}</span>
+            <strong>{fmt(total)}</strong>
+          </div>
+          <button className="btn primary" disabled={busy} onClick={confirm}>
+            {busy ? 'Đang nộp…' : editing ? 'Nộp lại' : 'Nộp thông tin'}
+          </button>
         </div>
-        <button className="btn primary" disabled={busy} onClick={confirm}>
-          {busy ? 'Đang nộp…' : editing ? 'Nộp lại' : 'Nộp thông tin'}
-        </button>
-      </div>
+      )}
       {dialog}
     </main>
   );
