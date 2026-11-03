@@ -31,6 +31,8 @@ const reportInput = z.object({
 });
 const HANDOVER = 3;
 const SHIFT_NAME = { 1: 'Ca 1', 2: 'Ca 2', 3: 'Giao ca 1-2' };
+// shifts in the order of the day: Ca 1, the handover (3), Ca 2
+const byShift = (a, b) => [1, 3, 2].indexOf(a.shift) - [1, 3, 2].indexOf(b.shift);
 
 // Current date/time in the configured timezone.
 function nowParts() {
@@ -201,7 +203,7 @@ export default function reportRoutes({ reports, stores, counters, users }) {
       row.reportCount += 1;
       map.set(k, row);
     }
-    const rows = [...map.values()].sort((a, b) => b.date.localeCompare(a.date) || a.shift - b.shift);
+    const rows = [...map.values()].sort((a, b) => b.date.localeCompare(a.date) || byShift(a, b));
     res.json({ rows, grandTotal: rows.reduce((s, x) => s + x.total, 0) });
   });
 
@@ -222,7 +224,7 @@ export default function reportRoutes({ reports, stores, counters, users }) {
       map.set(k, row);
     }
     const rows = [...map.values()].sort(
-      (a, b) => b.date.localeCompare(a.date) || a.shift - b.shift ||
+      (a, b) => b.date.localeCompare(a.date) || byShift(a, b) ||
         a.storeName.localeCompare(b.storeName) || a.bigCounterName.localeCompare(b.bigCounterName) ||
         a.smallCounterName.localeCompare(b.smallCounterName),
     );

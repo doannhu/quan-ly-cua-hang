@@ -68,10 +68,11 @@ export function Row({ label, children }) {
   );
 }
 
+// in the order of the day (the handover comes between the two shifts); the values stay 1, 2, 3
 export const SHIFTS = [
   { value: 1, label: 'Ca 1' },
-  { value: 2, label: 'Ca 2' },
   { value: 3, label: 'Giao ca 1-2' },
+  { value: 2, label: 'Ca 2' },
 ];
 export const shiftLabel = (v) => SHIFTS.find((s) => s.value === v)?.label || `Ca ${v}`;
 
