@@ -24,7 +24,8 @@ export function groupSubmissions(reports) {
 }
 
 // Comparison result per counter (status only — staff never see system quantities or the difference)
-const RESULT_LABEL = { khop: 'Khớp', lech: 'Lệch', cho: 'Chờ quầy khác', chua_ghep: 'Chưa ghép (admin)' };
+const RESULT_LABEL = { khop: 'Đủ', lech: 'Thiếu / dư', cho: 'Chờ quầy khác', chua_ghep: 'Chưa ghép (admin)' };
+const DIRECTION_LABEL = { thieu: 'Thiếu', du: 'Dư' };
 
 export default function MyReports({ onBack, onEdit }) {
   const [data, setData] = useState(null);
@@ -57,7 +58,7 @@ export default function MyReports({ onBack, onEdit }) {
         </button>
       </header>
       <h1 className="page-title">Báo cáo đã nộp</h1>
-      {data && <p className="muted edit-hint">Hôm nay {fmtDate(data.today)} · bấm «Kiểm tra kết quả» sau khi admin tải tồn kho, quầy nào lệch thì «Sửa» và nộp lại</p>}
+      {data && <p className="muted edit-hint">Hôm nay {fmtDate(data.today)} · bấm «Kiểm tra kết quả» sau khi admin tải tồn kho, quầy nào thiếu hoặc dư thì «Sửa» và nộp lại</p>}
 
       {error && <p className="error center">{error}</p>}
       {!data && !error && <p className="muted center">Đang tải…</p>}
@@ -89,7 +90,7 @@ export default function MyReports({ onBack, onEdit }) {
                     </span>
                     <span className="sub-line-right">
                       <b>{fmt(r.total)}{r.weight != null && ` · TL ${fmt(r.weight)}`}</b>
-                      {res && <span className={`res-chip chip-${res.result}`}>{RESULT_LABEL[res.result]}</span>}
+                      {res && <span className={`res-chip chip-${res.result}`}>{DIRECTION_LABEL[res.direction] || RESULT_LABEL[res.result]}</span>}
                     </span>
                     {res?.result === 'cho' && (
                       <span className="small wait-note">
@@ -111,9 +112,9 @@ export default function MyReports({ onBack, onEdit }) {
                     : chk.status === 'pending'
                       ? 'Chưa có kết quả từ admin — admin chưa tải báo cáo tồn kho (BC008) cho ngày này.'
                       : chk.allOk
-                        ? 'Tất cả quầy đều khớp với hệ thống.'
+                        ? 'Tất cả quầy đều đủ so với hệ thống.'
                         : lechCount
-                          ? `${lechCount} quầy lệch — kiểm tra lại số lượng, bấm «Sửa» để sửa và nộp lại.`
+                          ? `${lechCount} quầy thiếu hoặc dư — kiểm tra lại số lượng, bấm «Sửa» để sửa và nộp lại.`
                           : 'Chưa đủ dữ liệu để so — xem ghi chú từng quầy.'}
                 </div>
               )}

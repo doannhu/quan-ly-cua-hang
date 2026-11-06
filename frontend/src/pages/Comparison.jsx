@@ -15,7 +15,9 @@ const diffClass = (d) => (d === 0 ? 'd-ok' : d < 0 ? 'd-short' : 'd-over');
 const statusOf = (d) => (d === 0 ? 'ok' : d < 0 ? 'short' : 'over');
 // a row is off when its quantity or its TL differs; it is coloured by the quantity first
 const rowStatus = (r) => statusOf(r.diff || r.weight?.diff || 0);
-const diffWord = (d) => (d === 0 ? 'khớp' : d < 0 ? 'thiếu' : 'dư');
+const diffWord = (d) => (d === 0 ? 'đủ' : d < 0 ? 'thiếu' : 'dư');
+// "Đủ" alone when equal, "-2 thiếu" / "+1 dư" otherwise
+const diffText = (d) => (d === 0 ? 'Đủ' : <>{signed(d)} <span className="cmp-diff-word">{diffWord(d)}</span></>);
 // "03:40, 26/10"
 const stamp = (iso) => {
   const d = new Date(iso);
@@ -370,7 +372,7 @@ export default function Comparison({ ask, fail }) {
                   <button className={`fchip f-all ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>
                     Tất cả <b>{counted.length}</b>
                   </button>
-                  {[['short', 'Thiếu'], ['over', 'Dư'], ['ok', 'Khớp']].map(([k, label]) => (
+                  {[['short', 'Thiếu'], ['over', 'Dư'], ['ok', 'Đủ']].map(([k, label]) => (
                     <button key={k} className={`fchip f-${k} ${filter === k ? 'on' : ''}`} disabled={!byStatus[k].n}
                       onClick={() => setFilter(filter === k ? 'all' : k)}>
                       {label} <b>{byStatus[k].n}</b>
@@ -396,7 +398,7 @@ export default function Comparison({ ask, fail }) {
                     </div>
                     <div className="cmp-side">
                       <span className={`diff-pill p-${statusOf(r.diff)}`}>
-                        {signed(r.diff)} <span className="cmp-diff-word">{diffWord(r.diff)}</span>
+                        {diffText(r.diff)}
                       </span>
                       <span className="cmp-nums"><b>{fmt(r.actual)}</b> / {fmt(r.system)}</span>
                     </div>
@@ -408,7 +410,7 @@ export default function Comparison({ ask, fail }) {
                         ) : (
                           <>
                             <span className={`diff-pill p-${statusOf(r.weight.diff)}`}>
-                              {signed(r.weight.diff)} <span className="cmp-diff-word">{diffWord(r.weight.diff)}</span>
+                              {diffText(r.weight.diff)}
                             </span>
                             <span className="cmp-nums"><b>{fmt(r.weight.actual)}</b> / {fmt(r.weight.system)}</span>
                           </>

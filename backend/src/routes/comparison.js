@@ -286,7 +286,8 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
   // GET /api/reports/submissions/:submissionId/check
   //  -> { status: 'pending' }                         no BC008 for that store/day yet ("Chưa có kết quả từ admin")
   //  -> { status: 'ready', allOk, counters: [{ reportId, bigCounterName, smallCounterName,
-  //        result: 'khop' | 'lech' | 'cho' | 'chua_ghep', waitingFor?: [counter names] }] }
+  //        result: 'khop' | 'lech' | 'cho' | 'chua_ghep', direction?: 'thieu' | 'du', waitingFor?: [counter names] }] }
+  //     direction (lech only): counted less / more than the system, by quantity first, then TL
   //     khop/lech: the counter's comparison group matches / doesn't; cho: other counters in the same group are
   //     not counted yet; chua_ghep: the counter isn't linked to a PMV product.
   r.get('/reports/submissions/:submissionId/check', requireAuth, async (req, res) => {
@@ -307,7 +308,8 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         if (!row) return { ...base, result: 'chua_ghep' };
         const waiting = row.counters.filter((x) => !x.counted);
         if (waiting.length) return { ...base, result: 'cho', waitingFor: waiting.map((x) => `${x.bigName} › ${x.name}`) };
-        return { ...base, result: row.diff === 0 && !row.weight?.diff ? 'khop' : 'lech' };
+        const d = row.diff || row.weight?.diff || 0;
+        return d === 0 ? { ...base, result: 'khop' } : { ...base, result: 'lech', direction: d < 0 ? 'thieu' : 'du' };
       });
     res.json({ status: 'ready', date: first.date, shift: first.shift, allOk: result.every((x) => x.result === 'khop'), counters: result });
   });
