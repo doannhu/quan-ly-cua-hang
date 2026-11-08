@@ -534,3 +534,8 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .weight-row input { width: 110px; padding: 9px 8px; border-radius: 8px; background: var(--fill); text-align: right; font-weight: 600; }
 .cmp-weight { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
 .cmp-weight > span:first-child { flex: 1; min-width: 110px; }
+
+/* Báo cáo đếm: group a shift by counter or by staff member */
+.group-by { padding: 8px 16px; }
+.group-by .segmented { display: flex; }
+.group-by .segmented button { flex: 1; }

@@ -64,6 +64,7 @@ function Reports({ ask, fail }) {
   const [list, setList] = useState(null);
   const [open, setOpen] = useState(null);
   const [openShift, setOpenShift] = useState({}); // { [date]: shift whose counters are listed }
+  const [groupBy, setGroupBy] = useState('store'); // store: by store / counter · user: by the staff member who counted
 
   useEffect(() => { api.get('/stores').then(setStores).catch(fail); }, []);
   const load = useCallback(() => {
@@ -93,13 +94,21 @@ ${r.userName} · ${shiftLabel(r.shift)} · ${fmtDate(r.date)} ${r.time}
 
   const days = useMemo(() => {
     const byDay = {};
+    const empty = (date) => (byDay[date] ||= { date, total: 0, shifts: { 1: [], 2: [], 3: [] } });
+    // days nobody has submitted yet still show (with every counter "chưa đếm"): today, and every day of a short range
+    if (list) {
+      const span = (Date.parse(to) - Date.parse(from)) / 864e5;
+      if (span >= 0 && span < 7) {
+        for (let t = Date.parse(from); t <= Date.parse(to); t += 864e5) empty(new Date(t).toISOString().slice(0, 10));
+      } else if (today() >= from && today() <= to) empty(today());
+    }
     for (const r of list || []) {
       const d = (byDay[r.date] ||= { date: r.date, total: 0, shifts: { 1: [], 2: [], 3: [] } });
       d.total += r.total;
       d.shifts[r.shift].push(r);
     }
     return Object.values(byDay).sort((a, b) => b.date.localeCompare(a.date));
-  }, [list]);
+  }, [list, from, to]);
 
   const sum = (rs) => rs.reduce((s, r) => s + r.total, 0);
   const colorOf = useMemo(() => counterColors(stores), [stores]);
@@ -137,6 +146,71 @@ ${r.userName} · ${shiftLabel(r.shift)} · ${fmtDate(r.date)} ${r.time}
     return list.filter((g) => g.reports.length || g.counterCount);
   };
   const toggleShift = (date, s) => setOpenShift((o) => ({ ...o, [date]: o[date] === s ? null : s }));
+
+  // Group one shift's reports by the staff member who counted them; a counter counted together (Giao ca 1-2) is listed
+  // under both people. Per person: their counters in store / counter order.
+  const byUser = (rs) => {
+    const order = new Map();
+    for (const s of stores) s.bigCounters.forEach((b, i) => order.set(b.id, i));
+    const groups = new Map();
+    const add = (id, name, r) => {
+      const g = groups.get(id) || { id, name, total: 0, reports: [] };
+      g.total += r.total;
+      g.reports.push(r);
+      groups.set(id, g);
+    };
+    for (const r of rs) {
+      add(r.userId || r.userName, r.userName, r);
+      if (r.partnerName) add(r.partnerId || r.partnerName, r.partnerName, r);
+    }
+    const list = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    for (const g of list) {
+      g.reports.sort((a, b) => a.storeName.localeCompare(b.storeName) ||
+        (order.get(a.bigCounterId) ?? 99) - (order.get(b.bigCounterId) ?? 99) ||
+        a.bigCounterName.localeCompare(b.bigCounterName) || a.smallCounterName.localeCompare(b.smallCounterName));
+    }
+    return list;
+  };
+
+  // One counted small counter; tap to see positions, photos and delete. `who`: the person whose list it is shown in
+  // (in the by-staff view), so the line names the store and the other person instead of repeating the owner.
+  const reportItem = (r, who) => {
+    const people = who
+      ? [r.storeName, ...(r.partnerName ? [`cùng ${who === r.userName ? r.partnerName : r.userName}`] : [])]
+      : [`${r.userName}${r.partnerName ? ` + ${r.partnerName}` : ''}`];
+    return (
+      <div key={r.id} className="report counted">
+        <button className="report-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
+          <div className="report-title">
+            <div className="report-counter">
+              <CounterBadge color={colorOf(r.bigCounterId)}>{r.bigCounterName}</CounterBadge>
+              <b>{r.smallCounterName}</b>
+              {!who && <span className="progress-pill ok">Đã đếm</span>}
+            </div>
+            <div className="muted small">{people.join(' · ')} · {r.time}{r.editCount > 0 && <span className="edited"> · đã sửa</span>}</div>
+          </div>
+          <strong>{fmt(r.total)}</strong>
+        </button>
+        {open === r.id && (
+          <div className="report-detail">
+            {r.note && <p className="counter-note-view">{r.note}</p>}
+            {r.weight != null && <div className="detail-row"><span>Tổng trọng lượng (TL)</span><b>{fmt(r.weight)}</b></div>}
+            {r.positions.filter(shownRow).map((t, i) => (
+              <div key={i} className="detail-row">
+                <span>{/^\d+$/.test(t.no) ? `Vị trí ${t.no}` : t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>
+                <div className="photos">
+                  {t.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" /></a>)}
+                </div>
+              </div>
+            ))}
+            <button className="btn link danger-text report-delete" onClick={() => remove(r)}>
+              <TrashIcon size={16} /> Xóa báo cáo
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -180,7 +254,24 @@ ${r.userName} · ${shiftLabel(r.shift)} · ${fmtDate(r.date)} ${r.time}
                 {shiftLabel(s)}
                 {!d.shifts[s].length && <span className="shift-empty"> · chưa có báo cáo</span>}
               </div>
-              {byStore(d.shifts[s]).map((g) => (
+              {d.shifts[s].length > 0 && (
+                <div className="group-by">
+                  <Segmented options={[{ value: 'store', label: 'Theo quầy' }, { value: 'user', label: 'Theo nhân viên' }]}
+                    value={groupBy} onChange={setGroupBy} />
+                </div>
+              )}
+              {groupBy === 'user' && byUser(d.shifts[s]).map((u) => (
+                <div key={u.id} className="store-block">
+                  <div className="store-bar">
+                    <UsersIcon size={18} />
+                    <b>{u.name}</b>
+                    <span className="progress-pill ok">{u.reports.length} quầy</span>
+                    <span className="store-bar-total">{fmt(u.total)}</span>
+                  </div>
+                  {u.reports.map((r) => reportItem(r, u.name))}
+                </div>
+              ))}
+              {groupBy === 'store' && byStore(d.shifts[s]).map((g) => (
                 <div key={g.storeId} className="store-block">
                   <div className="store-bar">
                     <StoreIcon size={18} />
@@ -192,38 +283,7 @@ ${r.userName} · ${shiftLabel(r.shift)} · ${fmtDate(r.date)} ${r.time}
                     )}
                     <span className="store-bar-total">{fmt(g.total)}</span>
                   </div>
-              {g.reports.map((r) => (
-                <div key={r.id} className="report counted">
-                  <button className="report-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
-                    <div className="report-title">
-                      <div className="report-counter">
-                        <CounterBadge color={colorOf(r.bigCounterId)}>{r.bigCounterName}</CounterBadge>
-                        <b>{r.smallCounterName}</b>
-                        <span className="progress-pill ok">Đã đếm</span>
-                      </div>
-                      <div className="muted small">{r.userName}{r.partnerName ? ` + ${r.partnerName}` : ''} · {r.time}{r.editCount > 0 && <span className="edited"> · đã sửa</span>}</div>
-                    </div>
-                    <strong>{fmt(r.total)}</strong>
-                  </button>
-                  {open === r.id && (
-                    <div className="report-detail">
-                      {r.note && <p className="counter-note-view">{r.note}</p>}
-                      {r.weight != null && <div className="detail-row"><span>Tổng trọng lượng (TL)</span><b>{fmt(r.weight)}</b></div>}
-                      {r.positions.filter(shownRow).map((t, i) => (
-                        <div key={i} className="detail-row">
-                          <span>{/^\d+$/.test(t.no) ? `Vị trí ${t.no}` : t.no}{t.note ? <span className="muted"> · {t.note}</span> : null}</span><b>{fmt(t.quantity)}</b>
-                          <div className="photos">
-                            {t.photos.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" /></a>)}
-                          </div>
-                        </div>
-                      ))}
-                      <button className="btn link danger-text report-delete" onClick={() => remove(r)}>
-                        <TrashIcon size={16} /> Xóa báo cáo
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+              {g.reports.map((r) => reportItem(r))}
                   {g.missing.length > 0 && (
                     <div className="missing">
                       <div className="missing-title">
