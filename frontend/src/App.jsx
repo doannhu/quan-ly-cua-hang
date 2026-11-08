@@ -5,10 +5,11 @@ import StaffHome from './pages/StaffHome.jsx';
 import StaffReport from './pages/StaffReport.jsx';
 import MyReports from './pages/MyReports.jsx';
 import Admin from './pages/Admin.jsx';
+import PayrollPage from './pages/Payroll.jsx';
 
 export default function App() {
   const [auth, setAuth] = useState(() => session.get());
-  // home | report | mine | edit | admin
+  // home | report | mine | edit | admin | payroll
   const [view, setView] = useState('home');
   const [editing, setEditing] = useState(null);
 
@@ -35,6 +36,7 @@ export default function App() {
   const edit = (s) => { setEditing(s); setView('edit'); };
 
   if (view === 'admin' && isAdmin) return <Admin onBack={home} />;
+  if (view === 'payroll' && isAdmin) return <PayrollPage onBack={home} />;
   if (view === 'report') return <StaffReport user={auth.user} onBack={home} onOpenMine={mine} onEdit={edit} />;
   if (view === 'mine')
     return <MyReports onBack={home} onEdit={edit} />;
@@ -46,6 +48,7 @@ export default function App() {
       onOpenReport={() => setView('report')}
       onOpenMine={mine}
       onOpenAdmin={isAdmin ? () => setView('admin') : undefined}
+      onOpenPayroll={isAdmin ? () => setView('payroll') : undefined}
       onLogout={logout}
     />
   );

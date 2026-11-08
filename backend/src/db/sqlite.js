@@ -86,6 +86,12 @@ export async function connectSqlite({ sqlitePath }) {
     reports: new SqliteRepo(db, 'reports'),
     // system stock imported from PMV (one document per store + date)
     snapshots: new SqliteRepo(db, 'snapshots'),
+    // payroll (tính lương): settings (one doc), employees by code, timesheet per month, schedule per day, notes
+    paySettings: new SqliteRepo(db, 'paySettings'),
+    payEmployees: new SqliteRepo(db, 'payEmployees'),
+    payTimesheets: new SqliteRepo(db, 'payTimesheets'),
+    paySchedules: new SqliteRepo(db, 'paySchedules'),
+    payNotes: new SqliteRepo(db, 'payNotes'),
   };
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS users_nameKey ON users (json_extract(data, '$.nameKey'));

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClipboardIcon, GearIcon, HistoryIcon } from '../components/icons.jsx';
+import { ClipboardIcon, GearIcon, HistoryIcon, MoneyIcon } from '../components/icons.jsx';
 import { Segmented } from '../components/ui.jsx';
 import { getTheme, setTheme } from '../theme.js';
 
@@ -9,7 +9,7 @@ const THEMES = [
   { value: 'dark', label: 'Tối' },
 ];
 
-export default function StaffHome({ user, onOpenReport, onOpenMine, onOpenAdmin, onLogout }) {
+export default function StaffHome({ user, onOpenReport, onOpenMine, onOpenAdmin, onOpenPayroll, onLogout }) {
   const [theme, setThemeState] = useState(getTheme);
   const changeTheme = (t) => {
     setTheme(t);
@@ -45,6 +45,17 @@ export default function StaffHome({ user, onOpenReport, onOpenMine, onOpenAdmin,
           <span className="menu-text">
             <b>Quản trị</b>
             <span className="muted small">Báo cáo tổng, nhân viên, cửa hàng</span>
+          </span>
+          <svg className="menu-chev" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l6 6-6 6" /></svg>
+        </button>
+      )}
+
+      {onOpenPayroll && (
+        <button className="menu-btn" onClick={onOpenPayroll} style={{ marginTop: 12 }}>
+          <span className="menu-icon" style={{ background: '#ff9500' }}><MoneyIcon size={22} /></span>
+          <span className="menu-text">
+            <b>Tính lương</b>
+            <span className="muted small">Giờ làm, tăng ca, lương nhân viên</span>
           </span>
           <svg className="menu-chev" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l6 6-6 6" /></svg>
         </button>

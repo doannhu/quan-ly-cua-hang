@@ -64,5 +64,10 @@ export async function connectMongo({ mongoUri, mongoDb }) {
     counters: new MongoRepo(db.collection('counters')),
     reports: new MongoRepo(db.collection('reports')),
     snapshots: new MongoRepo(db.collection('snapshots')),
+    paySettings: new MongoRepo(db.collection('paySettings')),
+    payEmployees: new MongoRepo(db.collection('payEmployees')),
+    payTimesheets: new MongoRepo(db.collection('payTimesheets')),
+    paySchedules: new MongoRepo(db.collection('paySchedules')),
+    payNotes: new MongoRepo(db.collection('payNotes')),
   };
 }
