@@ -414,9 +414,12 @@ export default function Comparison({ ask, fail }) {
                               {diffText(r.weight.effectiveDiff ?? r.weight.diff)}
                             </span>
                             <span className="cmp-nums"><b>{fmt(r.weight.actual)}</b> / {fmt(r.weight.system)}</span>
-                            {r.weight.tolerance > 0 && (
+                            {(r.weight.range?.perPiece || r.weight.tolerance > 0) && (
                               <span className="muted small cmp-tol">
-                                {r.weight.diff !== 0 && r.weight.effectiveDiff === 0 ? `lệch ${signed(r.weight.diff)}, ` : ''}sai số cho phép ±{fmt(r.weight.tolerance)}
+                                lệch {signed(r.weight.diff)} · cho phép{' '}
+                                {r.weight.range?.perPiece
+                                  ? `${signed(r.weight.range.min)} đến ${signed(r.weight.range.max)} (${fmt(r.weight.range.qty)} SP × ${fmt(r.weight.range.perPiece[0])}–${fmt(r.weight.range.perPiece[1])})`
+                                  : `±${fmt(r.weight.tolerance)}`}
                               </span>
                             )}
                           </>

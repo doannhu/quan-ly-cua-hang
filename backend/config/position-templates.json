@@ -7,6 +7,7 @@
     "trong_tu: true = có dòng 'Trong tủ 1' và nút thêm 'Trong tủ 2, 3...'.",
     "trong_luong: true = có ô nhập tổng trọng lượng; số này được so với cột TL vàng của BC008 giống như số lượng.",
     "sai_so_trong_luong: sai số cho phép của trọng lượng (ví dụ 0.1): lệch trong khoảng ± số này vẫn tính là Đủ. Bỏ trống = phải khớp đúng.",
+    "sai_so_trong_luong_moi_sp: [từ, đến] theo số sản phẩm trong BC008, ví dụ [0.012, 0.018]: Đủ khi TL nhân viên nhập nặng hơn TL hệ thống từ (SL × từ) đến (SL × đến); nhẹ hơn là Thiếu, nặng hơn là Dư. Dùng thay cho sai_so_trong_luong.",
     "muc: các dòng cố định; '@ten' = chèn cả nhóm trong 'nhom'. 'Lí do khác' luôn tự thêm ở cuối.",
     "mac_dinh: dùng cho quầy nhỏ không khớp quy tắc nào."
   ],
@@ -97,7 +98,7 @@
       "muc": ["5 chỉ", "2 chỉ", "1 chỉ", "5 phân", "2 phân", "1 phân", "@chung_nhan"]
     },
     { "ghi_chu": "Nít", "quay_lon": "Quầy nít", "trong_tu": true, "muc": ["@chung"] },
-    { "ghi_chu": "Simen", "quay_lon": "Quầy simen", "trong_tu": true, "trong_luong": true, "sai_so_trong_luong": 0.1, "muc": ["@chung"] },
+    { "ghi_chu": "Simen", "quay_lon": "Quầy simen", "trong_tu": true, "trong_luong": true, "sai_so_trong_luong_moi_sp": [0.012, 0.018], "muc": ["@chung"] },
     { "ghi_chu": "Vàng trắng 610", "quay_lon": "Quầy vàng trắng 10k", "trong_tu": true, "muc": ["@chung"] },
     { "ghi_chu": "Vàng y 980, 995, 999", "quay_lon": "Quầy vàng y", "trong_tu": true, "muc": ["@chung"] }
   ],

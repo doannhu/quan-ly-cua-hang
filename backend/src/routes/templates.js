@@ -34,7 +34,17 @@ export function loadTemplates(path = config.positionTemplatesPath) {
   };
   // sai_so_trong_luong: allowed TL difference (± this still counts as Đủ); 0 = must match exactly
   const tolerance = (t) => Math.max(0, Number(t.sai_so_trong_luong) || 0);
-  const template = (t) => ({ cabinet: !!t.trong_tu, weight: !!t.trong_luong, weightTolerance: tolerance(t), items: items(t.muc) });
+  // sai_so_trong_luong_moi_sp: [from, to] per piece of the system quantity: counted TL must be heavier than the system
+  // TL by qty × from … qty × to (e.g. tags weighed too); null when not set
+  const perPiece = (t) => {
+    const r = t.sai_so_trong_luong_moi_sp;
+    if (!Array.isArray(r) || r.length !== 2) return null;
+    const [a, b] = r.map(Number);
+    return Number.isFinite(a) && Number.isFinite(b) ? [Math.min(a, b), Math.max(a, b)] : null;
+  };
+  const template = (t) => ({
+    cabinet: !!t.trong_tu, weight: !!t.trong_luong, weightTolerance: tolerance(t), weightPerPiece: perPiece(t), items: items(t.muc),
+  });
   return {
     rules: (raw.quy_tac || []).map((t) => ({
       bigs: [].concat(t.quay_lon).map(key), smalls: t.quay_nho?.length ? t.quay_nho.map(key) : null, ...template(t),
@@ -43,10 +53,12 @@ export function loadTemplates(path = config.positionTemplatesPath) {
   };
 }
 
-// The template of one small counter: { cabinet: bool, weight: bool (staff enter the total TL), weightTolerance, items }
+// The template of one small counter: { cabinet, weight (staff enter the total TL), weightTolerance, weightPerPiece, items }
 export function templateFor(tpl, bigName, smallName) {
   const r = tpl.rules.find((x) => x.bigs.includes(key(bigName)) && (!x.smalls || x.smalls.includes(key(smallName))));
-  return r ? { cabinet: r.cabinet, weight: r.weight, weightTolerance: r.weightTolerance, items: r.items } : tpl.fallback;
+  return r
+    ? { cabinet: r.cabinet, weight: r.weight, weightTolerance: r.weightTolerance, weightPerPiece: r.weightPerPiece, items: r.items }
+    : tpl.fallback;
 }
 
 export default function templateRoutes({ counters }) {

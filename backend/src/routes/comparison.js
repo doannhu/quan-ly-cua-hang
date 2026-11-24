@@ -213,6 +213,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         entry.weighed = true;
         entry.actualWeight = countedWeight.get(c.id) || 0;
         entry.weightTolerance = tpl.weightTolerance || 0;
+        entry.weightPerPiece = tpl.weightPerPiece || null;
       }
       const l = linksOf(c, entry.bigName);
       entry.pmvNames = l.names;
@@ -238,10 +239,18 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         const sysW = info.some((x) => x.systemWeight == null) ? null : round3(info.reduce((s, x) => s + x.systemWeight, 0));
         const actW = round3(g.counters.reduce((s, c) => s + (c.actualWeight || 0), 0));
         const diff = sysW == null ? null : round3(actW - sysW);
-        // within ± tolerance (sai_so_trong_luong) still counts as Đủ: effectiveDiff 0, the real diff stays shown
+        // Allowed range of (counted − system), the real diff stays shown; effectiveDiff 0 = Đủ, < 0 Thiếu, > 0 Dư:
+        //  sai_so_trong_luong_moi_sp [a, b]: from system qty × a to system qty × b (counted is heavier, e.g. tags)
+        //  sai_so_trong_luong t: from −t to +t
+        const per = g.counters.find((c) => c.weightPerPiece)?.weightPerPiece;
         const tolerance = Math.max(0, ...g.counters.map((c) => c.weightTolerance || 0));
-        const ok = diff != null && Math.abs(diff) <= tolerance + 1e-9;
-        weight = { actual: actW, system: sysW, diff, tolerance, effectiveDiff: diff == null ? null : ok ? 0 : diff };
+        const range = per
+          ? { min: round3(system * per[0]), max: round3(system * per[1]), perPiece: per, qty: system }
+          : { min: -tolerance, max: tolerance };
+        const effectiveDiff = diff == null ? null
+          : diff < range.min - 1e-9 ? round3(diff - range.min)
+            : diff > range.max + 1e-9 ? round3(diff - range.max) : 0;
+        weight = { actual: actW, system: sysW, diff, tolerance, range, effectiveDiff };
       }
       return {
         pmvName: names.join(' + '), // display label of the group
@@ -255,7 +264,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         missingInFile: !!snap && names.some((n) => !pmv.has(n)),
         counted: g.counters.some((c) => c.counted),
         diff: actual - system,
-        weight, // { actual, system, diff, tolerance, effectiveDiff } or null; system/diff null when the file has no such TL
+        weight, // { actual, system, diff, tolerance, range, effectiveDiff } or null; system/diff null when the file has no such TL
       };
     });
     list.sort((a, b) => a.pmvBigName.localeCompare(b.pmvBigName) || a.pmvName.localeCompare(b.pmvName));
