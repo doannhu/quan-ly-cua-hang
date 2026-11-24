@@ -539,3 +539,4 @@ body, .group, .stat, .menu-btn, .total-bar, .tabbar { transition: background-col
 .group-by { padding: 8px 16px; }
 .group-by .segmented { display: flex; }
 .group-by .segmented button { flex: 1; }
+.cmp-tol { flex-basis: 100%; }

@@ -14,7 +14,8 @@ const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
 const diffClass = (d) => (d === 0 ? 'd-ok' : d < 0 ? 'd-short' : 'd-over');
 const statusOf = (d) => (d === 0 ? 'ok' : d < 0 ? 'short' : 'over');
 // a row is off when its quantity or its TL differs; it is coloured by the quantity first
-const rowStatus = (r) => statusOf(r.diff || r.weight?.diff || 0);
+// (TL within the allowed tolerance counts as equal: effectiveDiff 0)
+const rowStatus = (r) => statusOf(r.diff || (r.weight?.effectiveDiff ?? r.weight?.diff) || 0);
 const diffWord = (d) => (d === 0 ? 'đủ' : d < 0 ? 'thiếu' : 'dư');
 // "Đủ" alone when equal, "-2 thiếu" / "+1 dư" otherwise
 const diffText = (d) => (d === 0 ? 'Đủ' : <>{signed(d)} <span className="cmp-diff-word">{diffWord(d)}</span></>);
@@ -409,10 +410,15 @@ export default function Comparison({ ask, fail }) {
                           <span className="muted small">Thực tế {fmt(r.weight.actual)} · tải lại file BC008 để so TL «{data.systemSource}»</span>
                         ) : (
                           <>
-                            <span className={`diff-pill p-${statusOf(r.weight.diff)}`}>
-                              {diffText(r.weight.diff)}
+                            <span className={`diff-pill p-${statusOf(r.weight.effectiveDiff ?? r.weight.diff)}`}>
+                              {diffText(r.weight.effectiveDiff ?? r.weight.diff)}
                             </span>
                             <span className="cmp-nums"><b>{fmt(r.weight.actual)}</b> / {fmt(r.weight.system)}</span>
+                            {r.weight.tolerance > 0 && (
+                              <span className="muted small cmp-tol">
+                                {r.weight.diff !== 0 && r.weight.effectiveDiff === 0 ? `lệch ${signed(r.weight.diff)}, ` : ''}sai số cho phép ±{fmt(r.weight.tolerance)}
+                              </span>
+                            )}
                           </>
                         )}
                       </div>

@@ -208,9 +208,11 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         counterId: c.id, name: c.name, bigId: c.parentId, bigName: bigName.get(c.parentId) || '',
         actual: counted.get(c.id) || 0, counted: counted.has(c.id),
       };
-      if (templates && templateFor(templates, entry.bigName, c.name).weight) {
+      const tpl = templates && templateFor(templates, entry.bigName, c.name);
+      if (tpl?.weight) {
         entry.weighed = true;
         entry.actualWeight = countedWeight.get(c.id) || 0;
+        entry.weightTolerance = tpl.weightTolerance || 0;
       }
       const l = linksOf(c, entry.bigName);
       entry.pmvNames = l.names;
@@ -235,7 +237,11 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
       if (g.counters.some((c) => c.weighed)) {
         const sysW = info.some((x) => x.systemWeight == null) ? null : round3(info.reduce((s, x) => s + x.systemWeight, 0));
         const actW = round3(g.counters.reduce((s, c) => s + (c.actualWeight || 0), 0));
-        weight = { actual: actW, system: sysW, diff: sysW == null ? null : round3(actW - sysW) };
+        const diff = sysW == null ? null : round3(actW - sysW);
+        // within ± tolerance (sai_so_trong_luong) still counts as Đủ: effectiveDiff 0, the real diff stays shown
+        const tolerance = Math.max(0, ...g.counters.map((c) => c.weightTolerance || 0));
+        const ok = diff != null && Math.abs(diff) <= tolerance + 1e-9;
+        weight = { actual: actW, system: sysW, diff, tolerance, effectiveDiff: diff == null ? null : ok ? 0 : diff };
       }
       return {
         pmvName: names.join(' + '), // display label of the group
@@ -249,7 +255,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         missingInFile: !!snap && names.some((n) => !pmv.has(n)),
         counted: g.counters.some((c) => c.counted),
         diff: actual - system,
-        weight, // { actual, system, diff } or null; system/diff null when the file has no such TL
+        weight, // { actual, system, diff, tolerance, effectiveDiff } or null; system/diff null when the file has no such TL
       };
     });
     list.sort((a, b) => a.pmvBigName.localeCompare(b.pmvBigName) || a.pmvName.localeCompare(b.pmvName));
@@ -308,7 +314,7 @@ export default function comparisonRoutes({ snapshots, reports, stores, counters 
         if (!row) return { ...base, result: 'chua_ghep' };
         const waiting = row.counters.filter((x) => !x.counted);
         if (waiting.length) return { ...base, result: 'cho', waitingFor: waiting.map((x) => `${x.bigName} › ${x.name}`) };
-        const d = row.diff || row.weight?.diff || 0;
+        const d = row.diff || row.weight?.effectiveDiff || 0;
         return d === 0 ? { ...base, result: 'khop' } : { ...base, result: 'lech', direction: d < 0 ? 'thieu' : 'du' };
       });
     res.json({ status: 'ready', date: first.date, shift: first.shift, allOk: result.every((x) => x.result === 'khop'), counters: result });
